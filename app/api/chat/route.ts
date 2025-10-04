@@ -4,12 +4,12 @@ import axios from 'axios'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY! // Используем публичный ключ, а не service_role
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
 export async function POST(req: NextRequest) {
   try {
-    const { query } = await req.json()
+    const { query, model = 'command-r-plus' } = await req.json()
     if (!query || typeof query !== 'string') {
       return NextResponse.json({ error: 'Нет запроса' }, { status: 400 })
     }
@@ -43,28 +43,32 @@ export async function POST(req: NextRequest) {
     // 3. Сформировать промпт для LLM
     const prompt = `Ты — экспертный ассистент. Основываясь ИСКЛЮЧИТЕЛЬНО на предоставленном ниже контексте, дай четкий и лаконичный ответ на вопрос пользователя. Если в контексте нет информации для ответа, прямо скажи: "Я не нашел информации по вашему вопросу в своей базе знаний". Не придумывай ничего от себя.\n\nКонтекст:\n---\n${context}\n---\n\nВопрос: ${query}`
 
-    // 4. Получить ответ от OpenAI Chat API
+    // 4. Получить ответ от Cohere API
     const chatRes = await axios.post(
-      'https://api.openai.com/v1/chat/completions',
+      'https://api.cohere.ai/v1/generate',
       {
-        model: 'gpt-4',
-        messages: [
-          { role: 'system', content: 'Ты — экспертный ассистент, отвечай строго по контексту.' },
-          { role: 'user', content: prompt }
-        ],
+        model: model,
+        prompt: prompt,
         max_tokens: 512,
-        temperature: 0.2
+        temperature: 0.2,
+        k: 0,
+        p: 0.75,
+        frequency_penalty: 0,
+        presence_penalty: 0,
+        stop_sequences: [],
+        return_likelihoods: 'NONE'
       },
       {
         headers: {
-          'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+          'Authorization': `Bearer ${process.env.COHERE_API_KEY}`,
           'Content-Type': 'application/json',
         },
       }
     )
-    const answer = chatRes.data.choices[0].message.content.trim()
+    const answer = chatRes.data.generations[0].text.trim()
     return NextResponse.json({ answer })
   } catch (err: any) {
+    console.error('Chat API error:', err.response?.data || err.message)
     return NextResponse.json({ error: 'Ошибка генерации ответа' }, { status: 500 })
   }
 }

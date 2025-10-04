@@ -10,7 +10,15 @@ export default function ChatAssistant() {
   const [userInput, setUserInput] = useState('')
   const [chatHistory, setChatHistory] = useState<Message[]>([])
   const [isLoading, setIsLoading] = useState(false)
+  const [selectedModel, setSelectedModel] = useState('command-r-plus')
   const messagesEndRef = useRef<HTMLDivElement>(null)
+
+  const models = [
+    { id: 'command-r-plus', name: 'Command R+ (лучший)' },
+    { id: 'command-r', name: 'Command R' },
+    { id: 'command', name: 'Command' },
+    { id: 'base', name: 'Base' }
+  ]
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -27,7 +35,7 @@ export default function ChatAssistant() {
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: userInput })
+        body: JSON.stringify({ query: userInput, model: selectedModel })
       })
       const data = await res.json()
       setChatHistory(prev => [...prev, { role: 'assistant', content: data.answer }])
@@ -41,12 +49,33 @@ export default function ChatAssistant() {
   return (
     <div className="bg-white rounded-lg shadow-lg overflow-hidden">
       <div className="p-6 border-b">
-        <h2 className="text-2xl font-semibold text-gray-800">
-          Чат с AI-ассистентом
-        </h2>
-        <p className="text-gray-600 mt-1">
-          Задавайте вопросы по загруженным данным
-        </p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-2xl font-semibold text-gray-800">
+              Чат с AI-ассистентом
+            </h2>
+            <p className="text-gray-600 mt-1">
+              Задавайте вопросы по загруженным данным
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
+            <label htmlFor="model-select" className="text-sm font-medium text-gray-700">
+              Модель:
+            </label>
+            <select
+              id="model-select"
+              value={selectedModel}
+              onChange={(e) => setSelectedModel(e.target.value)}
+              className="border border-gray-300 rounded px-3 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              {models.map((model) => (
+                <option key={model.id} value={model.id}>
+                  {model.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
       </div>
 
       <div className="flex flex-col h-96">
