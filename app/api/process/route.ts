@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createEmbeddingProvider } from '@/lib/embeddingProviders'
+import { getEmbedding } from '@/lib/embedding'
 import { supabase } from '@/utils/supabase/server'
 import crypto from 'crypto'
 import axios from 'axios'
@@ -107,13 +107,9 @@ async function processAndSaveChunks(
   })
   
   console.log('Environment check:', {
-    EMBEDDING_PROVIDER: process.env.EMBEDDING_PROVIDER,
-    HUGGINGFACE_API_KEY: process.env.HUGGINGFACE_API_KEY ? 'SET' : 'NOT_SET',
+    HF_API_KEY: process.env.HF_API_KEY ? 'SET' : 'NOT_SET',
     SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY ? 'SET' : 'NOT_SET'
   })
-  
-  const embeddingProvider = createEmbeddingProvider()
-  console.log('Embedding provider created:', embeddingProvider.name)
   
   const chunks = splitIntoChunks(content)
   console.log('Chunks created:', chunks.length)
@@ -140,7 +136,7 @@ async function processAndSaveChunks(
 
       // Генерируем эмбеддинг
       console.log(`Chunk ${i + 1}: generating embedding...`)
-      const embedding = await embeddingProvider.generateEmbedding(chunk)
+      const embedding = await getEmbedding(chunk)
       console.log(`Chunk ${i + 1}: embedding generated, length: ${embedding.length}`)
 
       // Сохраняем в базу данных
@@ -155,9 +151,9 @@ async function processAndSaveChunks(
           metadata: {
             ...metadata,
             chunk_length: chunk.length,
-            embedding_provider: embeddingProvider.name.toLowerCase()
+            embedding_provider: 'huggingface'
           },
-          embedding_provider: embeddingProvider.name.toLowerCase()
+          embedding_provider: 'huggingface'
         })
 
       if (error) {

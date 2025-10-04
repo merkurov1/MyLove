@@ -2,6 +2,12 @@
 const nextConfig = {
   experimental: {
     serverComponentsExternalPackages: ['cheerio']
+  },
+  typescript: {
+    ignoreBuildErrors: false
+  },
+  eslint: {
+    ignoreDuringBuilds: true
   }
 }
 

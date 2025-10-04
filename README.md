@@ -1,260 +1,183 @@
-# Панель управления AI-ассистентом
+# Supabase CLI
 
-Веб-приложение для загрузки и обработки данных в векторную базу данных Supabase.
+[![Coverage Status](https://coveralls.io/repos/github/supabase/cli/badge.svg?branch=main)](https://coveralls.io/github/supabase/cli?branch=main) [![Bitbucket Pipelines](https://img.shields.io/bitbucket/pipelines/supabase-cli/setup-cli/master?style=flat-square&label=Bitbucket%20Canary)](https://bitbucket.org/supabase-cli/setup-cli/pipelines) [![Gitlab Pipeline Status](https://img.shields.io/gitlab/pipeline-status/sweatybridge%2Fsetup-cli?label=Gitlab%20Canary)
+](https://gitlab.com/sweatybridge/setup-cli/-/pipelines)
 
-## Возможности
+[Supabase](https://supabase.io) is an open source Firebase alternative. We're building the features of Firebase using enterprise-grade open source tools.
 
-- 🔐 Защищенный доступ с Basic Auth
-- 📁 Загрузка файлов (PDF, TXT, MD)
-- 🔗 Обработка ссылок (веб-статьи, YouTube)
-- 🗃️ Автоматическое разбиение на чанки
-- 🔍 Генерация эмбеддингов через OpenAI
-- 💾 Сохранение в Supabase с дедупликацией
+This repository contains all the functionality for Supabase CLI.
 
-## Технологический стек
+- [x] Running Supabase locally
+- [x] Managing database migrations
+- [x] Creating and deploying Supabase Functions
+- [x] Generating types directly from your database schema
+- [x] Making authenticated HTTP requests to [Management API](https://supabase.com/docs/reference/api/introduction)
 
-- **Frontend**: Next.js 14, TypeScript, Tailwind CSS
-- **Backend**: Next.js API Routes
-- **Database**: Supabase (PostgreSQL с векторным расширением)
-- **AI Embeddings**: Поддержка множественных провайдеров:
-  - 🦙 **Ollama** (локально, бесплатно) - рекомендуется
-  - 🤖 OpenAI (платно, высокое качество)
-  - 🤗 Hugging Face (бесплатно, онлайн)
-  - 🔮 Cohere (1000 запросов/месяц бесплатно)
-- **Authentication**: Basic Auth через middleware
+## Getting started
 
-## Быстрый старт
+### Install the CLI
 
-1. **Установка зависимостей**:
-   ```bash
-   npm install
-   ```
+Available via [NPM](https://www.npmjs.com) as dev dependency. To install:
 
-2. **Настройка переменных окружения**:
-   ```bash
-   cp .env.local.example .env.local
-   ```
-   
-   Заполните переменные в `.env.local`:
-   - `NEXT_PUBLIC_SUPABASE_URL` - URL вашего Supabase проекта
-   - `SUPABASE_SERVICE_ROLE_KEY` - Service Role ключ из Supabase
-   - `EMBEDDING_PROVIDER` - провайдер эмбеддингов (ollama/openai/huggingface/cohere)
-   - При использовании Ollama: установите Ollama и запустите `ollama pull nomic-embed-text`
-   - При использовании OpenAI: `OPENAI_API_KEY` - ключ API OpenAI
-   - При использовании HuggingFace: `HUGGINGFACE_API_KEY` - токен HuggingFace
-   - При использовании Cohere: `COHERE_API_KEY` - ключ API Cohere
-   - `BASIC_AUTH_USER` и `BASIC_AUTH_PASS` - данные для входа
-
-3. **Настройка базы данных Supabase**:
-   
-   Создайте таблицы в Supabase:
-   
-   ```sql
-   -- Таблица источников
-   CREATE TABLE sources (
-     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-     name TEXT NOT NULL,
-     description TEXT,
-     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-   );
-   
-   -- Включение векторного расширения
-   CREATE EXTENSION IF NOT EXISTS vector;
-   
-   -- Таблица документов (768 измерений для Ollama)
-   CREATE TABLE documents (
-     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-     content TEXT NOT NULL,
-     embedding vector(768), -- Ollama nomic-embed-text
-     checksum TEXT NOT NULL UNIQUE,
-     source_id UUID REFERENCES sources(id),
-     metadata JSONB,
-     embedding_provider TEXT DEFAULT 'ollama',
-     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-   );
-   
-   -- Индексы для оптимизации
-   CREATE INDEX ON documents USING gin(metadata);
-   CREATE INDEX ON documents(checksum);
-   CREATE INDEX ON documents(source_id);
-   ```
-
-4. **Добавление тестового источника**:
-   ```sql
-   INSERT INTO sources (name, description) 
-   VALUES ('Тестовый источник', 'Источник для тестирования загрузки данных');
-   ```
-
-5. **Запуск приложения**:
-   ```bash
-   npm run dev
-   ```
-
-6. **Открытие в браузере**:
-   Перейдите на http://localhost:3000
-   
-   Введите данные для входа (из `.env.local`):
-   - Пользователь: admin
-   - Пароль: mylove2025
-
-## Структура проекта
-
-```
-├── app/
-│   ├── api/
-│   │   ├── auth/route.ts          # Basic Auth endpoint
-│   │   └── process/route.ts       # API для обработки данных
-│   ├── globals.css                # Стили Tailwind
-│   ├── layout.tsx                 # Основной layout
-│   └── page.tsx                   # Главная страница
-├── components/
-│   ├── FileUploader.tsx           # Компонент загрузки файлов
-│   ├── LinkProcessor.tsx          # Компонент обработки ссылок
-│   └── SourceSelector.tsx         # Выбор источника данных
-├── lib/
-│   └── supabaseClient.ts          # Клиент Supabase
-├── middleware.ts                  # Basic Auth middleware
-└── .env.local                     # Переменные окружения
+```bash
+npm i supabase --save-dev
 ```
 
-## API Endpoints
+To install the beta release channel:
 
-### POST /api/process
-
-Обрабатывает файлы и ссылки.
-
-**Для файлов** (multipart/form-data):
-```javascript
-const formData = new FormData()
-formData.append('file', file)
-formData.append('type', 'file')
+```bash
+npm i supabase@beta --save-dev
 ```
 
-**Для ссылок** (application/json):
-```javascript
-{
-  "type": "links",
-  "links": ["https://example.com", "https://youtube.com/watch?v=..."]
-}
+When installing with yarn 4, you need to disable experimental fetch with the following nodejs config.
+
+```
+NODE_OPTIONS=--no-experimental-fetch yarn add supabase
 ```
 
-## 🆓 Бесплатные альтернативы OpenAI
+> **Note**
+For Bun versions below v1.0.17, you must add `supabase` as a [trusted dependency](https://bun.sh/guides/install/trusted) before running `bun add -D supabase`.
 
-### 🦙 Ollama (Рекомендуется)
-**Полностью локальный и бесплатный**
+<details>
+  <summary><b>macOS</b></summary>
 
-1. **Установка**:
-   ```bash
-   curl -fsSL https://ollama.ai/install.sh | sh
-   ```
+  Available via [Homebrew](https://brew.sh). To install:
 
-2. **Запуск и установка модели**:
-   ```bash
-   ollama serve
-   ollama pull nomic-embed-text
-   ```
+  ```sh
+  brew install supabase/tap/supabase
+  ```
 
-3. **Настройка** в `.env.local`:
-   ```env
-   EMBEDDING_PROVIDER=ollama
-   OLLAMA_BASE_URL=http://localhost:11434
-   OLLAMA_MODEL=nomic-embed-text
-   ```
+  To install the beta release channel:
+  
+  ```sh
+  brew install supabase/tap/supabase-beta
+  brew link --overwrite supabase-beta
+  ```
+  
+  To upgrade:
 
-### 🤗 Hugging Face (Бесплатный API)
-1. Получите токен на https://huggingface.co/settings/tokens
-2. Установите в `.env.local`:
-   ```env
-   EMBEDDING_PROVIDER=huggingface
-   HUGGINGFACE_API_KEY=ваш_токен
-   ```
+  ```sh
+  brew upgrade supabase
+  ```
+</details>
 
-### 🔮 Cohere (1000 запросов/месяц бесплатно)
-1. Получите ключ на https://dashboard.cohere.ai/api-keys
-2. Установите в `.env.local`:
-   ```env
-   EMBEDDING_PROVIDER=cohere
-   COHERE_API_KEY=ваш_ключ
-   ```
+<details>
+  <summary><b>Windows</b></summary>
 
-**📋 Подробные инструкции по Ollama**: см. `OLLAMA_SETUP.md`
+  Available via [Scoop](https://scoop.sh). To install:
 
-## Поддерживаемые форматы
+  ```powershell
+  scoop bucket add supabase https://github.com/supabase/scoop-bucket.git
+  scoop install supabase
+  ```
 
-### Файлы
-- `.pdf` - PDF документы (требует дополнительную настройку)
-- `.txt` - Текстовые файлы
-- `.md` - Markdown файлы
+  To upgrade:
 
-### Ссылки
-- **YouTube видео** - автоматическое извлечение транскрипции
-- **Веб-статьи** - извлечение основного текста
+  ```powershell
+  scoop update supabase
+  ```
+</details>
 
-## Безопасность
+<details>
+  <summary><b>Linux</b></summary>
 
-- Basic Authentication защищает весь сайт
-- Service Role ключ Supabase безопасно используется только на сервере
-- Checksum предотвращает дублирование данных
-- Валидация типов файлов и форматов
+  Available via [Homebrew](https://brew.sh) and Linux packages.
 
-## Развертывание
+  #### via Homebrew
 
-### 🚀 Vercel (рекомендуется для продакшена)
+  To install:
 
-**Используйте Hugging Face для Vercel** (Ollama не работает на serverless платформах):
+  ```sh
+  brew install supabase/tap/supabase
+  ```
 
-1. **Получите токен Hugging Face**: https://huggingface.co/settings/tokens
-2. **Установите** `EMBEDDING_PROVIDER=huggingface` в переменных окружения
-3. **Подключите репозиторий к Vercel**
-4. **Добавьте все переменные окружения** в настройках Vercel проекта
-5. **Деплой произойдет автоматически**
+  To upgrade:
 
-📋 **Подробная инструкция**: см. `VERCEL_SETUP.md`
+  ```sh
+  brew upgrade supabase
+  ```
 
-### 🏠 Локальная разработка
+  #### via Linux packages
 
-**Используйте Ollama для локальной разработки** (полностью бесплатно):
+  Linux packages are provided in [Releases](https://github.com/supabase/cli/releases). To install, download the `.apk`/`.deb`/`.rpm`/`.pkg.tar.zst` file depending on your package manager and run the respective commands.
 
-1. **Установите Ollama**: `curl -fsSL https://ollama.ai/install.sh | sh`
-2. **Запустите**: `ollama serve`
-3. **Установите модель**: `ollama pull nomic-embed-text`
-4. **Установите** `EMBEDDING_PROVIDER=ollama` в `.env.local`
+  ```sh
+  sudo apk add --allow-untrusted <...>.apk
+  ```
 
-📋 **Подробная инструкция**: см. `OLLAMA_SETUP.md`
+  ```sh
+  sudo dpkg -i <...>.deb
+  ```
 
-### 🌐 Другие платформы
+  ```sh
+  sudo rpm -i <...>.rpm
+  ```
 
-| Платформа | Ollama | HuggingFace | OpenAI | Cohere |
-|-----------|---------|-------------|---------|---------|
-| **Vercel** | ❌ | ✅ | ✅ | ✅ |
-| **Netlify** | ❌ | ✅ | ✅ | ✅ |
-| **Railway** | ✅ | ✅ | ✅ | ✅ |
-| **DigitalOcean** | ✅ | ✅ | ✅ | ✅ |
-| **AWS Amplify** | ❌ | ✅ | ✅ | ✅ |
-| **Локально** | ✅ | ✅ | ✅ | ✅ |
+  ```sh
+  sudo pacman -U <...>.pkg.tar.zst
+  ```
+</details>
 
-**Рекомендации:**
-- 🏠 **Локальная разработка**: Ollama (бесплатно, быстро, приватно)
-- ☁️ **Serverless (Vercel/Netlify)**: HuggingFace (бесплатно) или Cohere (лимит)
-- 🏢 **Продакшн с бюджетом**: OpenAI (лучшее качество)
-- 🐳 **Docker/VPS**: Ollama или любой другой
+<details>
+  <summary><b>Other Platforms</b></summary>
 
-## Известные ограничения
+  You can also install the CLI via [go modules](https://go.dev/ref/mod#go-install) without the help of package managers.
 
-1. **PDF файлы**: Требуется дополнительная библиотека для парсинга
-2. **Размер файлов**: Ограничен настройками Next.js (по умолчанию 1MB)
-3. **Rate limiting**: Нет ограничений на количество запросов
-4. **Мониторинг**: Нет встроенного логирования и метрик
+  ```sh
+  go install github.com/supabase/cli@latest
+  ```
 
-## Планы развития
+  Add a symlink to the binary in `$PATH` for easier access:
 
-- [ ] Поддержка PDF файлов
-- [ ] Прогресс-бар для длительных операций
-- [ ] Админ-панель для управления источниками
-- [ ] API для поиска по векторной БД
-- [ ] Поддержка других форматов (DOCX, RTF)
-- [ ] Настройка размера чанков
-- [ ] Batch обработка больших файлов
+  ```sh
+  ln -s "$(go env GOPATH)/bin/cli" /usr/bin/supabase
+  ```
 
----
-*Последнее обновление: 04.10.2025 - Готово к деплою!* 
+  This works on other non-standard Linux distros.
+</details>
+
+<details>
+  <summary><b>Community Maintained Packages</b></summary>
+
+  Available via [pkgx](https://pkgx.sh/). Package script [here](https://github.com/pkgxdev/pantry/blob/main/projects/supabase.com/cli/package.yml).
+  To install in your working directory:
+
+  ```bash
+  pkgx install supabase
+  ```
+
+  Available via [Nixpkgs](https://nixos.org/). Package script [here](https://github.com/NixOS/nixpkgs/blob/master/pkgs/development/tools/supabase-cli/default.nix).
+</details>
+
+### Run the CLI
+
+```bash
+supabase bootstrap
+```
+
+Or using npx:
+
+```bash
+npx supabase bootstrap
+```
+
+The bootstrap command will guide you through the process of setting up a Supabase project using one of the [starter](https://github.com/supabase-community/supabase-samples/blob/main/samples.json) templates.
+
+## Docs
+
+Command & config reference can be found [here](https://supabase.com/docs/reference/cli/about).
+
+## Breaking changes
+
+We follow semantic versioning for changes that directly impact CLI commands, flags, and configurations.
+
+However, due to dependencies on other service images, we cannot guarantee that schema migrations, seed.sql, and generated types will always work for the same CLI major version. If you need such guarantees, we encourage you to pin a specific version of CLI in package.json.
+
+## Developing
+
+To run from source:
+
+```sh
+# Go >= 1.22
+go run . help
+```
