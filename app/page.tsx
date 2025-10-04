@@ -1,4 +1,5 @@
 import FileUploader from '@/components/FileUploader'
+import LinkProcessor from '@/components/LinkProcessor'
 
 export default function Home() {
   return (
@@ -15,18 +16,27 @@ export default function Home() {
 
         <div className="bg-white rounded-lg shadow-lg p-8 mb-8">
           <h2 className="text-2xl font-semibold text-gray-800 mb-6">
-            Тестовая версия - добавляем FileUploader
+            Тестовая версия - добавляем LinkProcessor
           </h2>
           <p className="text-gray-600 mb-4">
-            Если вы видите этот текст, то базовая страница работает корректно.
+            FileUploader работает, тестируем LinkProcessor.
           </p>
         </div>
 
-        <div className="bg-white rounded-lg shadow-lg p-8">
-          <h2 className="text-2xl font-semibold text-gray-800 mb-6">
-            Загрузка файлов
-          </h2>
-          <FileUploader />
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          <div className="bg-white rounded-lg shadow-lg p-8">
+            <h2 className="text-2xl font-semibold text-gray-800 mb-6">
+              Загрузка файлов
+            </h2>
+            <FileUploader />
+          </div>
+
+          <div className="bg-white rounded-lg shadow-lg p-8">
+            <h2 className="text-2xl font-semibold text-gray-800 mb-6">
+              Обработка ссылок
+            </h2>
+            <LinkProcessor />
+          </div>
         </div>
       </div>
     </main>
