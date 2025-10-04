@@ -64,9 +64,35 @@ BEGIN
     d.embedding_provider,
     1 - (d.embedding <=> query_embedding) as similarity
   FROM documents d
-  WHERE 
+  WHERE
     (filter_source_id IS NULL OR d.source_id = filter_source_id)
     AND 1 - (d.embedding <=> query_embedding) > match_threshold
+  ORDER BY d.embedding <=> query_embedding
+  LIMIT match_count;
+END;
+$$;
+
+-- Функция match_documents для совместимости с существующим кодом
+CREATE OR REPLACE FUNCTION match_documents(
+  query_embedding vector(384),
+  match_count int DEFAULT 7
+)
+RETURNS TABLE (
+  id uuid,
+  content text,
+  metadata jsonb,
+  similarity float
+)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  RETURN QUERY
+  SELECT
+    d.id,
+    d.content,
+    d.metadata,
+    1 - (d.embedding <=> query_embedding) as similarity
+  FROM documents d
   ORDER BY d.embedding <=> query_embedding
   LIMIT match_count;
 END;
@@ -131,6 +157,9 @@ SELECT
 UNION ALL
 SELECT 
   'Функция search_documents: ✅ Создана' as status
+UNION ALL
+SELECT 
+  'Функция match_documents: ✅ Создана' as status
 UNION ALL
 SELECT 
   'Функция get_stats: ✅ Создана' as status;
