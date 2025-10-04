@@ -1,5 +1,5 @@
 -- 🚀 Настройка базы данных для панели управления AI-ассистентом
--- Размерность векторов: 768 (для Hugging Face facebook/bart-base)
+-- Размерность векторов: 384 (для Hugging Face all-MiniLM-L6-v2)
 
 -- Включение векторного расширения (если еще не включено)
 CREATE EXTENSION IF NOT EXISTS vector;
@@ -16,11 +16,11 @@ CREATE TABLE sources (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Таблица документов с векторными эмбеддингами (768 измерений для facebook/bart-base)
+-- Таблица документов с векторными эмбеддингами (384 измерения для all-MiniLM-L6-v2)
 CREATE TABLE documents (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   content TEXT NOT NULL,
-  embedding vector(768), -- Hugging Face facebook/bart-base имеет размерность 768
+  embedding vector(384), -- Hugging Face all-MiniLM-L6-v2 имеет размерность 384
   checksum TEXT NOT NULL UNIQUE,
   source_id UUID REFERENCES sources(id) ON DELETE CASCADE,
   metadata JSONB DEFAULT '{}',
