@@ -7,7 +7,11 @@ import * as cheerio from 'cheerio'
 
 // Функция для разбиения текста на чанки
 function splitIntoChunks(text: string, maxChunkSize: number = 1000): string[] {
+  console.log('splitIntoChunks called with text length:', text.length)
+  
   const sentences = text.split(/[.!?]+/).filter(s => s.trim().length > 0)
+  console.log('Sentences found:', sentences.length)
+  
   const chunks: string[] = []
   let currentChunk = ''
 
@@ -30,7 +34,11 @@ function splitIntoChunks(text: string, maxChunkSize: number = 1000): string[] {
     chunks.push(currentChunk.trim())
   }
 
-  return chunks.filter(chunk => chunk.length > 10) // Исключаем очень короткие чанки
+  const finalChunks = chunks.filter(chunk => chunk.length > 10) // Исключаем очень короткие чанки
+  console.log('Final chunks count:', finalChunks.length)
+  console.log('Final chunks lengths:', finalChunks.map(c => c.length))
+  
+  return finalChunks
 }
 
 // Функция для вычисления checksum
@@ -92,12 +100,23 @@ async function processAndSaveChunks(
   sourceId: string, 
   metadata: Record<string, any> = {}
 ) {
+  console.log('processAndSaveChunks called with:', { 
+    contentLength: content.length, 
+    sourceId, 
+    metadata 
+  })
+  
   const embeddingProvider = createEmbeddingProvider()
+  console.log('Embedding provider created:', embeddingProvider.name)
+  
   const chunks = splitIntoChunks(content)
+  console.log('Chunks created:', chunks.length)
+  
   let savedChunks = 0
 
-  for (const chunk of chunks) {
+  for (const [index, chunk] of chunks.entries()) {
     try {
+      console.log(`Processing chunk ${index + 1}/${chunks.length}, length: ${chunk.length}`)
       const checksum = calculateChecksum(chunk)
       
       // Проверяем, существует ли уже такой чанк
@@ -108,14 +127,17 @@ async function processAndSaveChunks(
         .single()
 
       if (existingDoc) {
-        console.log('Чанк уже существует, пропускаем')
+        console.log(`Chunk ${index + 1}: already exists, skipping`)
         continue
       }
 
       // Генерируем эмбеддинг
+      console.log(`Chunk ${index + 1}: generating embedding...`)
       const embedding = await embeddingProvider.generateEmbedding(chunk)
+      console.log(`Chunk ${index + 1}: embedding generated, length: ${embedding.length}`)
 
       // Сохраняем в базу данных
+      console.log(`Chunk ${index + 1}: saving to database...`)
       const { error } = await supabase
         .from('documents')
         .insert({
@@ -132,12 +154,13 @@ async function processAndSaveChunks(
         })
 
       if (error) {
-        console.error('Ошибка сохранения чанка:', error)
+        console.error(`Chunk ${index + 1}: save error:`, error)
       } else {
+        console.log(`Chunk ${index + 1}: saved successfully`)
         savedChunks++
       }
     } catch (error) {
-      console.error('Ошибка обработки чанка:', error)
+      console.error(`Chunk ${index + 1}: processing error:`, error)
     }
   }
 
@@ -146,10 +169,13 @@ async function processAndSaveChunks(
 
 export async function POST(request: NextRequest) {
   try {
+    console.log('API POST request received')
     const contentType = request.headers.get('content-type') || ''
+    console.log('Content type:', contentType)
     
     // Получаем source_id
     const sourceId = process.env.DEFAULT_SOURCE_ID || 'c5aab739-7112-4360-be9e-45edf4287c42'
+    console.log('Source ID:', sourceId)
 
     if (contentType.includes('multipart/form-data')) {
       // Обработка файлов
@@ -158,11 +184,16 @@ export async function POST(request: NextRequest) {
       const type = formData.get('type') as string
 
       if (!file || type !== 'file') {
+        console.log('File validation failed:', { file: !!file, type })
         return NextResponse.json({ error: 'Файл не найден' }, { status: 400 })
       }
 
+      console.log('Processing file:', file.name, 'Size:', file.size)
+      
       // Читаем содержимое файла
       const content = await file.text()
+      console.log('File content length:', content.length)
+      
       const metadata = {
         filename: file.name,
         file_size: file.size,
@@ -170,7 +201,9 @@ export async function POST(request: NextRequest) {
         source_type: 'file'
       }
 
+      console.log('Starting chunk processing...')
       const result = await processAndSaveChunks(content, sourceId, metadata)
+      console.log('Chunk processing result:', result)
       
       return NextResponse.json({
         success: true,
