@@ -11,6 +11,7 @@ export default function ChatAssistant() {
   const [chatHistory, setChatHistory] = useState<Message[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [selectedModel, setSelectedModel] = useState('command-r-plus')
+  const [debugInfo, setDebugInfo] = useState<object | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const models = [
@@ -27,20 +28,82 @@ export default function ChatAssistant() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!userInput.trim()) return
+
     const userMessage: Message = { role: 'user', content: userInput }
     setChatHistory(prev => [...prev, userMessage])
     setUserInput('')
     setIsLoading(true)
+
     try {
+      // ШАГ 1: Начинаем отправку запроса
+      setDebugInfo({
+        level: 'INFO',
+        status: 'Sending request...',
+        timestamp: new Date().toISOString(),
+        query: userInput,
+        model: selectedModel
+      })
+
+      // ШАГ 2: Выполняем fetch запрос
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ query: userInput, model: selectedModel })
       })
+
+      // ШАГ 3: Проверяем статус ответа
+      setDebugInfo(prev => ({
+        ...prev,
+        responseStatus: res.status,
+        responseHeaders: Object.fromEntries(res.headers.entries()),
+        timestamp: new Date().toISOString()
+      }))
+
+      // ШАГ 4: Обрабатываем неуспешный ответ сервера
+      if (!res.ok) {
+        const errorBody = await res.json()
+        setDebugInfo({
+          level: 'SERVER_ERROR',
+          status: res.status,
+          body: errorBody,
+          timestamp: new Date().toISOString(),
+          error: errorBody.error || 'Unknown server error',
+          details: errorBody.details || 'No additional details'
+        })
+        setChatHistory(prev => [...prev, {
+          role: 'assistant',
+          content: `Ошибка сервера: ${errorBody.error || 'Неизвестная ошибка'}`
+        }])
+        return
+      }
+
+      // ШАГ 5: Обрабатываем успешный ответ
       const data = await res.json()
+      setDebugInfo({
+        level: 'SUCCESS',
+        status: 200,
+        message: 'Response received successfully',
+        timestamp: new Date().toISOString(),
+        responseData: data,
+        answerLength: data.answer?.length || 0
+      })
+
       setChatHistory(prev => [...prev, { role: 'assistant', content: data.answer }])
-    } catch (err) {
-      setChatHistory(prev => [...prev, { role: 'assistant', content: 'Ошибка получения ответа от ассистента.' }])
+
+    } catch (err: any) {
+      // ШАГ 6: Обрабатываем ошибки клиента (сеть, etc.)
+      setDebugInfo({
+        level: 'CLIENT_ERROR',
+        message: err.message,
+        timestamp: new Date().toISOString(),
+        error: err.toString(),
+        stack: err.stack?.substring(0, 500)
+      })
+
+      setChatHistory(prev => [...prev, {
+        role: 'assistant',
+        content: 'Ошибка получения ответа от ассистента.'
+      }])
     } finally {
       setIsLoading(false)
     }
@@ -117,6 +180,16 @@ export default function ChatAssistant() {
             {isLoading ? '...' : 'Отправить'}
           </button>
         </form>
+
+        {/* Отладочная панель */}
+        {debugInfo && (
+          <div className="mt-4 p-4 bg-gray-100 rounded mx-4 mb-4">
+            <h3 className="font-bold text-sm mb-2">Отладочная информация:</h3>
+            <pre className="text-xs whitespace-pre-wrap overflow-auto max-h-40 bg-white p-2 rounded border">
+              {JSON.stringify(debugInfo, null, 2)}
+            </pre>
+          </div>
+        )}
       </div>
     </div>
   )
