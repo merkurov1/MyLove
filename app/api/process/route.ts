@@ -106,6 +106,12 @@ async function processAndSaveChunks(
     metadata 
   })
   
+  console.log('Environment check:', {
+    EMBEDDING_PROVIDER: process.env.EMBEDDING_PROVIDER,
+    HUGGINGFACE_API_KEY: process.env.HUGGINGFACE_API_KEY ? 'SET' : 'NOT_SET',
+    SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY ? 'SET' : 'NOT_SET'
+  })
+  
   const embeddingProvider = createEmbeddingProvider()
   console.log('Embedding provider created:', embeddingProvider.name)
   

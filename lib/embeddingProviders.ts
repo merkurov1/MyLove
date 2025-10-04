@@ -66,9 +66,14 @@ export class HuggingFaceProvider implements EmbeddingProvider {
   ) {}
 
   async generateEmbedding(text: string): Promise<number[]> {
+    console.log('HuggingFace: Starting embedding generation for text length:', text.length)
+    
     if (!process.env.HUGGINGFACE_API_KEY) {
+      console.error('HuggingFace: API key not found')
       throw new Error('HUGGINGFACE_API_KEY не найден')
     }
+
+    console.log('HuggingFace: API key found, making request...')
 
     try {
       const response = await axios.post(
@@ -79,13 +84,25 @@ export class HuggingFaceProvider implements EmbeddingProvider {
             'Authorization': `Bearer ${process.env.HUGGINGFACE_API_KEY}`,
             'Content-Type': 'application/json',
           },
+          timeout: 30000 // 30 секунд таймаут
         }
       )
 
+      console.log('HuggingFace: Response status:', response.status)
+      console.log('HuggingFace: Response data type:', typeof response.data)
+      console.log('HuggingFace: Response data length:', Array.isArray(response.data) ? response.data.length : 'not array')
+      
       // Hugging Face возвращает массив массивов, берем первый
-      return response.data[0]
+      const embedding = response.data[0]
+      console.log('HuggingFace: Embedding length:', embedding?.length)
+      
+      return embedding
     } catch (error) {
-      console.error('Hugging Face embedding error:', error)
+      console.error('HuggingFace: Full error details:', error)
+      if (axios.isAxiosError(error)) {
+        console.error('HuggingFace: Response status:', error.response?.status)
+        console.error('HuggingFace: Response data:', error.response?.data)
+      }
       throw new Error('Ошибка генерации эмбеддинга через Hugging Face')
     }
   }
@@ -128,15 +145,26 @@ export class CohereProvider implements EmbeddingProvider {
 export function createEmbeddingProvider(): EmbeddingProvider {
   const provider = process.env.EMBEDDING_PROVIDER || 'openai'
   
+  console.log('Creating embedding provider:', provider)
+  console.log('Available env vars:', {
+    EMBEDDING_PROVIDER: process.env.EMBEDDING_PROVIDER,
+    HUGGINGFACE_API_KEY: process.env.HUGGINGFACE_API_KEY ? 'SET' : 'NOT_SET',
+    OPENAI_API_KEY: process.env.OPENAI_API_KEY ? 'SET' : 'NOT_SET'
+  })
+  
   switch (provider.toLowerCase()) {
     case 'ollama':
+      console.log('Using Ollama provider')
       return new OllamaProvider()
     case 'huggingface':
+      console.log('Using HuggingFace provider')
       return new HuggingFaceProvider()
     case 'cohere':
+      console.log('Using Cohere provider')
       return new CohereProvider()
     case 'openai':
     default:
+      console.log('Using OpenAI provider')
       return new OpenAIProvider()
   }
 }
