@@ -114,9 +114,10 @@ async function processAndSaveChunks(
   
   let savedChunks = 0
 
-  for (const [index, chunk] of chunks.entries()) {
+  for (let i = 0; i < chunks.length; i++) {
+    const chunk = chunks[i]
     try {
-      console.log(`Processing chunk ${index + 1}/${chunks.length}, length: ${chunk.length}`)
+      console.log(`Processing chunk ${i + 1}/${chunks.length}, length: ${chunk.length}`)
       const checksum = calculateChecksum(chunk)
       
       // Проверяем, существует ли уже такой чанк
@@ -127,17 +128,17 @@ async function processAndSaveChunks(
         .single()
 
       if (existingDoc) {
-        console.log(`Chunk ${index + 1}: already exists, skipping`)
+        console.log(`Chunk ${i + 1}: already exists, skipping`)
         continue
       }
 
       // Генерируем эмбеддинг
-      console.log(`Chunk ${index + 1}: generating embedding...`)
+      console.log(`Chunk ${i + 1}: generating embedding...`)
       const embedding = await embeddingProvider.generateEmbedding(chunk)
-      console.log(`Chunk ${index + 1}: embedding generated, length: ${embedding.length}`)
+      console.log(`Chunk ${i + 1}: embedding generated, length: ${embedding.length}`)
 
       // Сохраняем в базу данных
-      console.log(`Chunk ${index + 1}: saving to database...`)
+      console.log(`Chunk ${i + 1}: saving to database...`)
       const { error } = await supabase
         .from('documents')
         .insert({
@@ -154,13 +155,13 @@ async function processAndSaveChunks(
         })
 
       if (error) {
-        console.error(`Chunk ${index + 1}: save error:`, error)
+        console.error(`Chunk ${i + 1}: save error:`, error)
       } else {
-        console.log(`Chunk ${index + 1}: saved successfully`)
+        console.log(`Chunk ${i + 1}: saved successfully`)
         savedChunks++
       }
     } catch (error) {
-      console.error(`Chunk ${index + 1}: processing error:`, error)
+      console.error(`Chunk ${i + 1}: processing error:`, error)
     }
   }
 
