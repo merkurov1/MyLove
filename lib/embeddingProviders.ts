@@ -79,7 +79,7 @@ export class HuggingFaceProvider implements EmbeddingProvider {
 
     try {
       const response = await axios.post(
-        `https://api-inference.huggingface.co/pipeline/feature-extraction/${this.model}`,
+        `https://api-inference.huggingface.co/models/${this.model}`,
         { inputs: text },
         {
           headers: {
@@ -92,10 +92,20 @@ export class HuggingFaceProvider implements EmbeddingProvider {
 
       console.log('HuggingFace: Response status:', response.status)
       console.log('HuggingFace: Response data type:', typeof response.data)
-      console.log('HuggingFace: Response data length:', Array.isArray(response.data) ? response.data.length : 'not array')
+      console.log('HuggingFace: Response data structure:', Array.isArray(response.data))
       
-      // Hugging Face возвращает массив массивов, берем первый
-      const embedding = response.data[0]
+      // HuggingFace models API возвращает массив эмбеддингов
+      let embedding;
+      if (Array.isArray(response.data) && Array.isArray(response.data[0])) {
+        // Если это массив массивов, берем первый
+        embedding = response.data[0];
+      } else if (Array.isArray(response.data)) {
+        // Если это просто массив чисел
+        embedding = response.data;
+      } else {
+        throw new Error('Unexpected response format from HuggingFace');
+      }
+      
       console.log('HuggingFace: Embedding length:', embedding?.length)
       
       return embedding
