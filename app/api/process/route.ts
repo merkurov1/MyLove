@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createEmbeddingProvider } from '@/lib/embeddingProviders'
-import { supabase } from '@/lib/supabaseClient'
+import { supabase } from '@/utils/supabase/server'
 import crypto from 'crypto'
 import axios from 'axios'
 import * as cheerio from 'cheerio'

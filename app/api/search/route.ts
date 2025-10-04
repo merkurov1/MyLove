@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createEmbeddingProvider } from '@/lib/embeddingProviders'
-import { supabase } from '@/lib/supabaseClient'
+import { supabase } from '@/utils/supabase/server'
 
 export async function POST(request: NextRequest) {
   try {

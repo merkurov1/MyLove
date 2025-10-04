@@ -8,7 +8,7 @@ export default function DatabasePanel() {
     <div className="max-w-5xl mx-auto p-4 space-y-8">
       <StatsPanel />
       <SemanticSearch />
-      <FileUploader />
+      <FileUploader sources={[]} />
       <DocumentsTable />
     </div>
   )

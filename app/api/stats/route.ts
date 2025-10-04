@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabaseClient'
+import { supabase } from '@/utils/supabase/server'
 
 export async function GET() {
   // Всего документов
