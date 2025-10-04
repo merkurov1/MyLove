@@ -23,9 +23,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Нет запроса' }, { status: 400 })
     }
 
-    if (!process.env.HF_API_KEY) {
-      console.error(`[${new Date().toISOString()}] HF_API_KEY not found`)
-      return NextResponse.json({ error: 'API ключ Hugging Face не настроен' }, { status: 500 })
+    if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
+      console.error(`[${new Date().toISOString()}] NEXT_PUBLIC_SUPABASE_URL not found`)
+      return NextResponse.json({ error: 'Supabase не настроен' }, { status: 500 })
     }
 
     console.log(`[${new Date().toISOString()}] Starting embedding request...`)
@@ -67,52 +67,39 @@ export async function POST(req: NextRequest) {
     const prompt = `Ты — экспертный ассистент. Основываясь ИСКЛЮЧИТЕЛЬНО на предоставленном ниже контексте, дай четкий и лаконичный ответ на вопрос пользователя. Если в контексте нет информации для ответа, прямо скажи: "Я не нашел информации по вашему вопросу в своей базе знаний". Не придумывай ничего от себя.\n\nКонтекст:\n---\n${contextText}\n---\n\nВопрос: ${query}`
     console.log(`[${new Date().toISOString()}] Prompt created, length: ${prompt.length}`)
 
-    // 5. Получить ответ от Hugging Face API
-    console.log(`[${new Date().toISOString()}] Starting Hugging Face API request`)
-    const hfStart = Date.now()
+    // 5. Получить ответ от Supabase Edge Function
+    console.log(`[${new Date().toISOString()}] Starting Supabase text generation`)
+    const genStart = Date.now()
 
-    const hfResponse = await fetch('https://api-inference.huggingface.co/models/gpt2-medium', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${process.env.HF_API_KEY}`,
-        'Content-Type': 'application/json',
+    const { data: genData, error: genError } = await supabase.functions.invoke('generate', {
+      body: {
+        prompt: prompt,
+        max_length: 512,
+        temperature: 0.2
       },
-      body: JSON.stringify({
-        inputs: prompt,
-        parameters: {
-          max_length: 512,
-          temperature: 0.2,
-          do_sample: true,
-          return_full_text: false
-        },
-        options: {
-          wait_for_model: true
-        }
-      })
     })
 
-    if (!hfResponse.ok) {
-      console.error(`[${new Date().toISOString()}] Hugging Face API error:`, hfResponse.status, hfResponse.statusText)
-      return NextResponse.json({ error: 'Ошибка Hugging Face API' }, { status: 500 })
+    if (genError) {
+      console.error(`[${new Date().toISOString()}] Supabase generation error:`, genError)
+      return NextResponse.json({ error: 'Ошибка генерации текста' }, { status: 500 })
     }
 
-    const hfData = await hfResponse.json()
-    const hfTime = Date.now() - hfStart
-    console.log(`[${new Date().toISOString()}] Hugging Face API request completed in ${hfTime}ms`)
-
-    let answer = ''
-    if (Array.isArray(hfData) && hfData[0]?.generated_text) {
-      answer = hfData[0].generated_text
-    } else if (hfData.generated_text) {
-      answer = hfData.generated_text
+    if (genData.error) {
+      console.error(`[${new Date().toISOString()}] Generation function error:`, genData.error)
+      return NextResponse.json({ error: genData.error }, { status: 500 })
     }
+
+    const genTime = Date.now() - genStart
+    console.log(`[${new Date().toISOString()}] Supabase text generation completed in ${genTime}ms`)
+
+    let answer = genData.generated_text
 
     console.log(`[${new Date().toISOString()}] Extracted answer, length: ${answer.length}`)
     console.log(`[${new Date().toISOString()}] Answer preview: ${answer.substring(0, 100)}`)
 
     if (!answer.trim()) {
-      console.error(`[${new Date().toISOString()}] Empty answer extracted from Hugging Face response`)
-      return NextResponse.json({ error: 'Получен пустой ответ от Hugging Face API' }, { status: 500 })
+      console.error(`[${new Date().toISOString()}] Empty answer extracted from generation response`)
+      return NextResponse.json({ error: 'Получен пустой ответ' }, { status: 500 })
     }
 
     const totalTime = Date.now() - startTime
