@@ -30,6 +30,7 @@ export default function FileUploader({ sources }: FileUploaderProps) {
     try {
       const formData = new FormData()
       formData.append('file', file)
+      formData.append('type', 'file')
       formData.append('sourceId', sourceId)
 
       const response = await fetch('/api/process', {

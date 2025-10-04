@@ -8,13 +8,10 @@ CREATE EXTENSION IF NOT EXISTS vector;
 DROP TABLE IF EXISTS documents;
 DROP TABLE IF EXISTS sources;
 
--- Таблица источников данных
-CREATE TABLE sources (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  name TEXT NOT NULL,
-  description TEXT,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
+-- Вставляем источник по умолчанию
+INSERT INTO sources (id, name, description) VALUES
+('c5aab739-7112-4360-be9e-45edf4287c42', 'Основной источник', 'Основной источник документов для AI-ассистента')
+ON CONFLICT (id) DO NOTHING;
 
 -- Таблица документов с векторными эмбеддингами (384 измерения для all-MiniLM-L6-v2)
 CREATE TABLE documents (

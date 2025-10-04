@@ -179,16 +179,13 @@ export async function POST(request: NextRequest) {
     console.log('API POST request received')
     const contentType = request.headers.get('content-type') || ''
     console.log('Content type:', contentType)
-    
-    // Получаем source_id
-    const sourceId = process.env.DEFAULT_SOURCE_ID || 'c5aab739-7112-4360-be9e-45edf4287c42'
-    console.log('Source ID:', sourceId)
 
     if (contentType.includes('multipart/form-data')) {
       // Обработка файлов
       const formData = await request.formData()
       const file = formData.get('file') as File
       const type = formData.get('type') as string
+      const sourceId = formData.get('sourceId') as string || process.env.DEFAULT_SOURCE_ID || 'c5aab739-7112-4360-be9e-45edf4287c42'
 
       if (!file || type !== 'file') {
         console.log('File validation failed:', { file: !!file, type })
@@ -222,7 +219,8 @@ export async function POST(request: NextRequest) {
     } else if (contentType.includes('application/json')) {
       // Обработка ссылок
       const body = await request.json()
-      const { type, links } = body
+      const { type, links, sourceId } = body
+      const finalSourceId = sourceId || process.env.DEFAULT_SOURCE_ID || 'c5aab739-7112-4360-be9e-45edf4287c42'
 
       if (type !== 'links' || !Array.isArray(links)) {
         return NextResponse.json({ error: 'Неверный формат данных' }, { status: 400 })
@@ -249,7 +247,7 @@ export async function POST(request: NextRequest) {
             metadata.content_type = 'web_article'
           }
 
-          const result = await processAndSaveChunks(content, sourceId, metadata)
+          const result = await processAndSaveChunks(content, finalSourceId, metadata)
           processedCount++
           results.push({
             url: link,

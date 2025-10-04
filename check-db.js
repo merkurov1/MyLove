@@ -37,15 +37,39 @@ async function checkDatabase() {
     })
   }
   
-  // Проверяем общее количество документов
-  const { count, error: countError } = await supabase
-    .from('documents')
-    .select('*', { count: 'exact', head: true })
-  
-  if (countError) {
-    console.error('❌ Ошибка при подсчете документов:', countError)
-  } else {
-    console.log(`📊 Общее количество документов: ${count}`)
+  // Проверяем функции базы данных
+  console.log('\n🔧 Проверяем функции базы данных...')
+  try {
+    // Проверяем функцию match_documents
+    const { data: matchResult, error: matchError } = await supabase.rpc('match_documents', {
+      query_embedding: Array.from({ length: 384 }, () => Math.random()),
+      match_count: 1
+    })
+
+    if (matchError) {
+      console.error('❌ Ошибка функции match_documents:', matchError.message)
+    } else {
+      console.log('✅ Функция match_documents работает')
+    }
+  } catch (error) {
+    console.error('❌ Ошибка при вызове match_documents:', error.message)
+  }
+
+  // Проверяем размерность векторов
+  console.log('\n📏 Проверяем размерность векторов...')
+  try {
+    const { data: vectorCheck, error: vectorError } = await supabase
+      .from('documents')
+      .select('id')
+      .limit(1)
+
+    if (vectorError) {
+      console.error('❌ Ошибка при проверке векторов:', vectorError.message)
+    } else {
+      console.log('✅ Структура таблицы documents корректна')
+    }
+  } catch (error) {
+    console.error('❌ Ошибка при проверке структуры:', error.message)
   }
 }
 

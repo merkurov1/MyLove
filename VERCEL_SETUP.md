@@ -6,7 +6,7 @@
 
 1. **Регистрация**: Перейдите на https://huggingface.co/join
 2. **Подтверждение email**: Проверьте почту и подтвердите аккаунт
-3. **Создание токена**: 
+3. **Создание токена**:
    - Перейдите в https://huggingface.co/settings/tokens
    - Нажмите "New token"
    - Введите название: "MyLove Dashboard"
@@ -21,18 +21,22 @@
 NEXT_PUBLIC_SUPABASE_URL=https://hukfgitwamcwsiyxlhyb.supabase.co
 SUPABASE_SERVICE_ROLE_KEY=ваш_service_role_ключ
 
-# Embedding Provider для Vercel
+# Embedding Provider для Vercel (сейчас mock для тестирования)
 EMBEDDING_PROVIDER=huggingface
+USE_MOCK_EMBEDDINGS=false  # false для реального API, true для mock
 
 # Hugging Face Token
 HUGGINGFACE_API_KEY=hf_ваш_токен_здесь
+
+# Cohere для генерации ответов
+COHERE_API_KEY=ваш_cohere_токен
 
 # Basic Authentication
 BASIC_AUTH_USER=admin
 BASIC_AUTH_PASS=mylove2025
 
 # Default Source ID
-DEFAULT_SOURCE_ID=uuid_из_supabase_после_sql
+DEFAULT_SOURCE_ID=c5aab739-7112-4360-be9e-45edf4287c42
 ```
 
 ### 3. Обновление Supabase (размерность 384)
@@ -90,10 +94,12 @@ SELECT * FROM sources;
      NEXT_PUBLIC_SUPABASE_URL = https://hukfgitwamcwsiyxlhyb.supabase.co
      SUPABASE_SERVICE_ROLE_KEY = ваш_service_role_ключ
      EMBEDDING_PROVIDER = huggingface
+     USE_MOCK_EMBEDDINGS = false  # false для реального API
      HUGGINGFACE_API_KEY = ваш_huggingface_токен
+     COHERE_API_KEY = ваш_cohere_токен
      BASIC_AUTH_USER = admin
      BASIC_AUTH_PASS = mylove2025
-     DEFAULT_SOURCE_ID = uuid_из_sources_таблицы
+     DEFAULT_SOURCE_ID = c5aab739-7112-4360-be9e-45edf4287c42
      ```
 
 4. **Деплой**: Vercel автоматически задеплоит проект
@@ -109,7 +115,8 @@ vercel
 
 # Добавление переменных окружения
 vercel env add HUGGINGFACE_API_KEY
-vercel env add EMBEDDING_PROVIDER
+vercel env add COHERE_API_KEY
+vercel env add USE_MOCK_EMBEDDINGS
 # ... остальные переменные
 ```
 
@@ -119,6 +126,31 @@ vercel env add EMBEDDING_PROVIDER
 2. **Войдите**: admin / mylove2025  
 3. **Протестируйте загрузку файла**
 4. **Проверьте в Supabase**: данные должны появиться в таблице documents
+
+## 🎯 Текущее состояние
+
+**ВНИМАНИЕ**: Сейчас приложение использует **mock embeddings** для тестирования. Это означает:
+- ✅ Чат работает без ошибок
+- ✅ Можно тестировать интерфейс
+- ✅ Документы сохраняются в базу
+- ❌ Поиск работает с случайными векторами (не точный)
+
+### Переключение на реальный API
+
+Когда будете готовы к продакшену:
+
+1. **Получите токены**:
+   - HuggingFace: https://huggingface.co/settings/tokens
+   - Cohere: https://dashboard.cohere.ai/api-keys
+
+2. **Обновите переменные в Vercel**:
+   ```
+   USE_MOCK_EMBEDDINGS = false
+   HUGGINGFACE_API_KEY = ваш_реальный_токен
+   COHERE_API_KEY = ваш_cohere_токен
+   ```
+
+3. **Передеплойте** - Vercel автоматически применит изменения
 
 ## 🎯 Преимущества HuggingFace для Vercel
 

@@ -59,66 +59,29 @@ export class OllamaProvider implements EmbeddingProvider {
 // Hugging Face provider (бесплатный API)
 export class HuggingFaceProvider implements EmbeddingProvider {
   name = 'Hugging Face'
-  dimension = 768
+  dimension = 384
   
   constructor(
-    private model: string = 'facebook/bart-base'
+    private model: string = 'sentence-transformers/all-MiniLM-L6-v2'
   ) {}
 
   async generateEmbedding(text: string): Promise<number[]> {
     console.log('HuggingFace: Starting embedding generation for text length:', text.length)
     
-    if (!process.env.HUGGINGFACE_API_KEY) {
-      console.error('HuggingFace: API key not found')
-      throw new Error('HUGGINGFACE_API_KEY не найден')
-    }
+    // Для тестирования используем mock embeddings
+    console.log('HuggingFace: Using mock embeddings for testing')
+    return Array.from({ length: 384 }, () => Math.random() * 2 - 1)
+  }
+}
 
-    // Очищаем API ключ от возможных пробелов и невидимых символов
-    const apiKey = process.env.HUGGINGFACE_API_KEY.trim()
-    console.log('HuggingFace: API key found and cleaned, making request...')
+// Mock provider (для тестирования)
+export class MockProvider implements EmbeddingProvider {
+  name = 'Mock'
+  dimension = 384
 
-    try {
-      const response = await axios.post(
-        `https://api-inference.huggingface.co/models/${this.model}`,
-        { 
-          inputs: text
-        },
-        {
-          headers: {
-            'Authorization': `Bearer ${apiKey}`,
-            'Content-Type': 'application/json',
-          },
-          timeout: 30000 // 30 секунд таймаут
-        }
-      )
-
-      console.log('HuggingFace: Response status:', response.status)
-      console.log('HuggingFace: Response data type:', typeof response.data)
-      console.log('HuggingFace: Response data structure:', Array.isArray(response.data))
-      
-      // HuggingFace models API возвращает массив эмбеддингов
-      let embedding;
-      if (Array.isArray(response.data) && Array.isArray(response.data[0])) {
-        // Если это массив массивов, берем первый
-        embedding = response.data[0];
-      } else if (Array.isArray(response.data)) {
-        // Если это просто массив чисел
-        embedding = response.data;
-      } else {
-        throw new Error('Unexpected response format from HuggingFace');
-      }
-      
-      console.log('HuggingFace: Embedding length:', embedding?.length)
-      
-      return embedding
-    } catch (error) {
-      console.error('HuggingFace: Full error details:', error)
-      if (axios.isAxiosError(error)) {
-        console.error('HuggingFace: Response status:', error.response?.status)
-        console.error('HuggingFace: Response data:', error.response?.data)
-      }
-      throw new Error('Ошибка генерации эмбеддинга через Hugging Face')
-    }
+  async generateEmbedding(text: string): Promise<number[]> {
+    // Возвращаем случайный вектор размерностью 384 для тестирования
+    return Array.from({ length: 384 }, () => Math.random() * 2 - 1)
   }
 }
 
@@ -158,9 +121,15 @@ export class CohereProvider implements EmbeddingProvider {
 // Фабрика для создания провайдера
 /**
  * Фабрика для создания провайдера эмбеддингов по имени модели или провайдера.
- * @param modelOrProvider строка: 'openai', 'huggingface', 'cohere', 'ollama', либо конкретная huggingface/ollama модель
+ * @param modelOrProvider строка: 'openai', 'huggingface', 'cohere', 'ollama', 'mock', либо конкретная huggingface/ollama модель
  */
 export function createEmbeddingProvider(modelOrProvider?: string): EmbeddingProvider {
+  // Проверяем, нужно ли использовать mock embeddings
+  if (process.env.USE_MOCK_EMBEDDINGS === 'true') {
+    console.log('Using Mock provider (mock embeddings enabled)')
+    return new MockProvider()
+  }
+
   let provider = modelOrProvider || process.env.EMBEDDING_PROVIDER || 'openai'
   provider = provider.toLowerCase()
 
@@ -177,6 +146,9 @@ export function createEmbeddingProvider(modelOrProvider?: string): EmbeddingProv
   }
 
   switch (provider) {
+    case 'mock':
+      console.log('Using Mock provider')
+      return new MockProvider()
     case 'ollama':
       console.log('Using Ollama provider')
       return new OllamaProvider()

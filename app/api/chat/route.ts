@@ -44,73 +44,15 @@ export async function POST(req: NextRequest) {
 
     console.log(`[${new Date().toISOString()}] Starting embedding request...`)
 
-    // 1. Получить embedding для запроса
-    let queryEmbedding: number[] = []
-    let embeddingProvider = process.env.EMBEDDING_PROVIDER || 'openai'
-    const useMockEmbeddings = process.env.USE_MOCK_EMBEDDINGS === 'true'
+    // 1. Получить embedding для запроса через унифицированный провайдер
+    const { createEmbeddingProvider } = await import('@/lib/embeddingProviders')
+    const embeddingProvider = createEmbeddingProvider()
+    console.log(`[${new Date().toISOString()}] Using ${embeddingProvider.name} for embeddings`)
 
-    if (useMockEmbeddings) {
-      console.log(`[${new Date().toISOString()}] Using mock embeddings for testing`)
-      queryEmbedding = new Array(384).fill(0).map(() => Math.random() - 0.5)
-      console.log(`[${new Date().toISOString()}] Mock embedding generated, length: ${queryEmbedding.length}`)
-    } else if (embeddingProvider === 'huggingface' && process.env.HUGGINGFACE_API_KEY) {
-      console.log(`[${new Date().toISOString()}] Using HuggingFace for embeddings`)
-      const embeddingStart = Date.now()
-      try {
-        const hfRes = await axios.post(
-          'https://api-inference.huggingface.co/models/sentence-transformers/all-MiniLM-L6-v2',
-          { inputs: query },
-          {
-            headers: {
-              'Authorization': `Bearer ${process.env.HUGGINGFACE_API_KEY}`,
-              'Content-Type': 'application/json',
-            },
-            timeout: 30000,
-          }
-        )
-        queryEmbedding = hfRes.data[0] // HuggingFace возвращает массив
-        const embeddingTime = Date.now() - embeddingStart
-        console.log(`[${new Date().toISOString()}] HuggingFace embedding completed in ${embeddingTime}ms, length: ${queryEmbedding.length}`)
-      } catch (hfError: any) {
-        console.error(`[${new Date().toISOString()}] HuggingFace embedding failed (${hfError.response?.status}):`, hfError.message)
-        // Fallback to mock embeddings for testing
-        console.log(`[${new Date().toISOString()}] Using mock embeddings for testing`)
-        queryEmbedding = new Array(384).fill(0).map(() => Math.random() - 0.5)
-        console.log(`[${new Date().toISOString()}] Mock embedding generated, length: ${queryEmbedding.length}`)
-      }
-    }
-
-    if ((embeddingProvider === 'openai' || queryEmbedding.length === 0) && process.env.OPENAI_API_KEY) {
-      console.log(`[${new Date().toISOString()}] Using OpenAI for embeddings`)
-      const embeddingStart = Date.now()
-      try {
-        const embeddingRes = await axios.post(
-          'https://api.openai.com/v1/embeddings',
-          {
-            input: query,
-            model: 'text-embedding-ada-002',
-          },
-          {
-            headers: {
-              'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
-              'Content-Type': 'application/json',
-            },
-            timeout: 30000,
-          }
-        )
-        const embeddingTime = Date.now() - embeddingStart
-        console.log(`[${new Date().toISOString()}] OpenAI embedding completed in ${embeddingTime}ms`)
-
-        queryEmbedding = embeddingRes.data.data[0].embedding
-        console.log(`[${new Date().toISOString()}] Embedding generated, length: ${queryEmbedding.length}`)
-      } catch (openaiError: any) {
-        console.error(`[${new Date().toISOString()}] OpenAI embedding failed (${openaiError.response?.status}):`, openaiError.message)
-        // Fallback to mock embeddings for testing
-        console.log(`[${new Date().toISOString()}] Using mock embeddings for testing`)
-        queryEmbedding = new Array(1536).fill(0).map(() => Math.random() - 0.5) // OpenAI ada-002 размерность
-        console.log(`[${new Date().toISOString()}] Mock embedding generated, length: ${queryEmbedding.length}`)
-      }
-    }
+    const embeddingStart = Date.now()
+    let queryEmbedding = await embeddingProvider.generateEmbedding(query)
+    const embeddingTime = Date.now() - embeddingStart
+    console.log(`[${new Date().toISOString()}] ${embeddingProvider.name} embedding completed in ${embeddingTime}ms, length: ${queryEmbedding.length}`)
 
     if (queryEmbedding.length === 0) {
       console.error(`[${new Date().toISOString()}] All embedding providers failed, using mock embeddings`)
@@ -178,23 +120,31 @@ export async function POST(req: NextRequest) {
     // ШАГ 5: Сформировать промпт для LLM
     // Теперь мы используем высококачественный контекст, отфильтрованный Cohere Rerank.
     // Это гарантирует, что модель получит только самую релевантную информацию для генерации ответа.
-    const prompt = `Ты — экспертный ассистент. Основываясь ИСКЛЮЧИТЕЛЬНО на предоставленном ниже контексте, дай четкий и лаконичный ответ на вопрос пользователя. Если в контексте нет информации для ответа, прямо скажи: "Я не нашел информации по вашему вопросу в своей базе знаний". Не придумывай ничего от себя.\n\nКонтекст:\n---\n${context}\n---\n\nВопрос: ${query}`
+    let contextText = context
+    if (contextText.length > 3000) {
+      console.log(`[${new Date().toISOString()}] Context too long (${contextText.length}), truncating to 3000 chars`)
+      contextText = contextText.substring(0, 3000) + '...'
+    }
+
+    const prompt = `Ты — экспертный ассистент. Основываясь ИСКЛЮЧИТЕЛЬНО на предоставленном ниже контексте, дай четкий и лаконичный ответ на вопрос пользователя. Если в контексте нет информации для ответа, прямо скажи: "Я не нашел информации по вашему вопросу в своей базе знаний". Не придумывай ничего от себя.\n\nКонтекст:\n---\n${contextText}\n---\n\nВопрос: ${query}`
     console.log(`[${new Date().toISOString()}] Prompt created with reranked context, length: ${prompt.length}`)
 
     // ШАГ 6: Получить ответ от Cohere API
     // Отправляем тщательно подготовленный промпт с отфильтрованным контекстом в Cohere для генерации финального ответа.
     // Благодаря переранжированию, модель получает только самую релевантную информацию.
     console.log(`[${new Date().toISOString()}] Starting Cohere API request with model: ${model}`)
+    console.log(`[${new Date().toISOString()}] Prompt length: ${prompt.length} characters`)
     const cohereStart = Date.now()
 
     const chatRes = await axios.post(
-      'https://api.cohere.ai/v1/chat',
+      'https://api.cohere.ai/v1/generate',
       {
-        message: prompt,
-        model: model,
+        prompt: prompt,
+        model: 'command', // Используем более стабильную модель
         stream: false,
         temperature: 0.2,
         max_tokens: 512,
+        return_likelihoods: 'NONE'
       },
       {
         headers: {
