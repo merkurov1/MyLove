@@ -73,7 +73,9 @@ export class HuggingFaceProvider implements EmbeddingProvider {
       throw new Error('HUGGINGFACE_API_KEY не найден')
     }
 
-    console.log('HuggingFace: API key found, making request...')
+    // Очищаем API ключ от возможных пробелов и невидимых символов
+    const apiKey = process.env.HUGGINGFACE_API_KEY.trim()
+    console.log('HuggingFace: API key found and cleaned, making request...')
 
     try {
       const response = await axios.post(
@@ -81,7 +83,7 @@ export class HuggingFaceProvider implements EmbeddingProvider {
         { inputs: text },
         {
           headers: {
-            'Authorization': `Bearer ${process.env.HUGGINGFACE_API_KEY}`,
+            'Authorization': `Bearer ${apiKey}`,
             'Content-Type': 'application/json',
           },
           timeout: 30000 // 30 секунд таймаут
