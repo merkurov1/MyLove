@@ -1,53 +1,108 @@
 
 "use client"
 import { useState } from 'react'
-import { useToast } from './ToastContext'
 
-export default function FileUploader() {
-  const [file, setFile] = useState<File | File[] | null>(null)
-  const [uploading, setUploading] = useState(false)
-  const [message, setMessage] = useState<string | null>(null)
-  const { showToast } = useToast()
+interface Source {
+  id: string
+  name: string
+  description?: string
+}
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const selectedFiles = e.target.files
-    if (selectedFiles && selectedFiles.length > 0) {
-      const allowedTypes = ['application/pdf', 'text/plain', 'text/markdown']
-      const allowedExtensions = ['.pdf', '.txt', '.md']
-      const validFiles: File[] = []
-      for (let i = 0; i < selectedFiles.length; i++) {
-        const file = selectedFiles[i]
-        const hasValidType = allowedTypes.includes(file.type) || 
-          allowedExtensions.some(ext => file.name.toLowerCase().endsWith(ext))
-        if (hasValidType) validFiles.push(file)
-      }
-      if (validFiles.length === 0) {
-        setMessage('Пожалуйста, выберите файлы формата PDF, TXT или MD')
-        showToast('Пожалуйста, выберите файлы формата PDF, TXT или MD', 'error')
-        setFile(null)
-        return
-      }
-      setFile(validFiles as any)
-      setMessage(null)
-    }
-  }
+interface FileUploaderProps {
+  sources: Source[]
+}
+
+export default function FileUploader({ sources }: FileUploaderProps) {
+  const [file, setFile] = useState<File | null>(null)
+  const [sourceId, setSourceId] = useState<string>('')
+  const [isLoading, setIsLoading] = useState(false)
+  const [message, setMessage] = useState<string>('')
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!file) {
-      setMessage('Пожалуйста, выберите файл(ы)')
-      showToast('Пожалуйста, выберите файл(ы)', 'error')
+    if (!file || !sourceId) {
+      setMessage('Пожалуйста, выберите файл и источник')
       return
     }
 
-    setUploading(true)
-    setMessage(null)
+    setIsLoading(true)
+    setMessage('')
 
     try {
-      const files = Array.isArray(file) ? file : [file]
-      const results = await Promise.all(files.map(async (f) => {
-        const formData = new FormData()
-        formData.append('file', f)
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('sourceId', sourceId)
+
+      const response = await fetch('/api/process', {
+        method: 'POST',
+        body: formData,
+      })
+
+      if (!response.ok) {
+        throw new Error('Ошибка загрузки файла')
+      }
+
+      const result = await response.json()
+      setMessage(`Файл успешно обработан! Чанков: ${result.totalChunks}`)
+      setFile(null)
+      setSourceId('')
+    } catch (error) {
+      setMessage('Ошибка при загрузке файла')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-2">
+          Выберите источник
+        </label>
+        <select
+          value={sourceId}
+          onChange={(e) => setSourceId(e.target.value)}
+          className="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          required
+        >
+          <option value="">Выберите источник</option>
+          {sources.map((source) => (
+            <option key={source.id} value={source.id}>
+              {source.name}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-2">
+          Выберите файл
+        </label>
+        <input
+          type="file"
+          onChange={(e) => setFile(e.target.files?.[0] || null)}
+          className="w-full border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          accept=".pdf,.txt,.md"
+          required
+        />
+      </div>
+
+      <button
+        type="submit"
+        disabled={isLoading}
+        className="w-full bg-blue-600 text-white py-2 px-4 rounded hover:bg-blue-700 disabled:opacity-50"
+      >
+        {isLoading ? 'Загрузка...' : 'Загрузить файл'}
+      </button>
+
+      {message && (
+        <p className={`text-sm ${message.includes('Ошибка') ? 'text-red-600' : 'text-green-600'}`}>
+          {message}
+        </p>
+      )}
+    </form>
+  )
+}
         formData.append('type', 'file')
 
         const response = await fetch('/api/process', {
