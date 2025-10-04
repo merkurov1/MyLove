@@ -156,17 +156,27 @@ export class CohereProvider implements EmbeddingProvider {
 }
 
 // Фабрика для создания провайдера
-export function createEmbeddingProvider(): EmbeddingProvider {
-  const provider = process.env.EMBEDDING_PROVIDER || 'openai'
-  
-  console.log('Creating embedding provider:', provider)
-  console.log('Available env vars:', {
-    EMBEDDING_PROVIDER: process.env.EMBEDDING_PROVIDER,
-    HUGGINGFACE_API_KEY: process.env.HUGGINGFACE_API_KEY ? 'SET' : 'NOT_SET',
-    OPENAI_API_KEY: process.env.OPENAI_API_KEY ? 'SET' : 'NOT_SET'
-  })
-  
-  switch (provider.toLowerCase()) {
+/**
+ * Фабрика для создания провайдера эмбеддингов по имени модели или провайдера.
+ * @param modelOrProvider строка: 'openai', 'huggingface', 'cohere', 'ollama', либо конкретная huggingface/ollama модель
+ */
+export function createEmbeddingProvider(modelOrProvider?: string): EmbeddingProvider {
+  let provider = modelOrProvider || process.env.EMBEDDING_PROVIDER || 'openai'
+  provider = provider.toLowerCase()
+
+  // Специальная обработка для huggingface/ollama с указанием модели
+  if (provider.startsWith('huggingface/')) {
+    const model = provider.replace('huggingface/', '')
+    console.log('Using HuggingFace provider with model:', model)
+    return new HuggingFaceProvider(model)
+  }
+  if (provider.startsWith('ollama/')) {
+    const model = provider.replace('ollama/', '')
+    console.log('Using Ollama provider with model:', model)
+    return new OllamaProvider('http://localhost:11434', model)
+  }
+
+  switch (provider) {
     case 'ollama':
       console.log('Using Ollama provider')
       return new OllamaProvider()

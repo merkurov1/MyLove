@@ -1,6 +1,8 @@
 import FileUploader from '@/components/FileUploader'
 import LinkProcessor from '@/components/LinkProcessor'
 import SourceSelector from '@/components/SourceSelector'
+import SemanticSearch from '@/components/SemanticSearch'
+import StatsPanel from '@/components/StatsPanel'
 
 export default function Home() {
   return (
@@ -21,6 +23,9 @@ export default function Home() {
           </h2>
           <SourceSelector />
         </div>
+
+        <SemanticSearch />
+        <StatsPanel />
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           <div className="bg-white rounded-lg shadow-lg p-8">
