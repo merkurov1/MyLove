@@ -1,7 +1,3 @@
-import FileUploader from '@/components/FileUploader'
-import LinkProcessor from '@/components/LinkProcessor'
-import SourceSelector from '@/components/SourceSelector'
-
 export default function Home() {
   return (
     <main className="min-h-screen bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
@@ -17,25 +13,11 @@ export default function Home() {
 
         <div className="bg-white rounded-lg shadow-lg p-8 mb-8">
           <h2 className="text-2xl font-semibold text-gray-800 mb-6">
-            Выбор источника данных
+            Тестовая версия
           </h2>
-          <SourceSelector />
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          <div className="bg-white rounded-lg shadow-lg p-8">
-            <h2 className="text-2xl font-semibold text-gray-800 mb-6">
-              Загрузка файлов
-            </h2>
-            <FileUploader />
-          </div>
-
-          <div className="bg-white rounded-lg shadow-lg p-8">
-            <h2 className="text-2xl font-semibold text-gray-800 mb-6">
-              Обработка ссылок
-            </h2>
-            <LinkProcessor />
-          </div>
+          <p className="text-gray-600">
+            Если вы видите этот текст, то базовая страница работает корректно.
+          </p>
         </div>
       </div>
     </main>
