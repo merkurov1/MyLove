@@ -17,8 +17,8 @@ export default function RootLayout({
 }) {
 
   return (
-    <html lang="ru" className="dark">
-      <body className={inter.className + ' bg-gray-50 dark:bg-gray-900 min-h-screen text-gray-900 dark:text-gray-100'}>
+    <html lang="ru">
+      <body className={inter.className}>
         <ClientProviders>{children}</ClientProviders>
       </body>
     </html>
