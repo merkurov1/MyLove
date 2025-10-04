@@ -59,10 +59,10 @@ export class OllamaProvider implements EmbeddingProvider {
 // Hugging Face provider (бесплатный API)
 export class HuggingFaceProvider implements EmbeddingProvider {
   name = 'Hugging Face'
-  dimension = 384
+  dimension = 768
   
   constructor(
-    private model: string = 'sentence-transformers/all-MiniLM-L6-v2'
+    private model: string = 'facebook/bart-base'
   ) {}
 
   async generateEmbedding(text: string): Promise<number[]> {
@@ -80,7 +80,9 @@ export class HuggingFaceProvider implements EmbeddingProvider {
     try {
       const response = await axios.post(
         `https://api-inference.huggingface.co/models/${this.model}`,
-        { inputs: text },
+        { 
+          inputs: text
+        },
         {
           headers: {
             'Authorization': `Bearer ${apiKey}`,
