@@ -84,3 +84,27 @@ BEGIN
   LIMIT match_count;
 END;
 $$ LANGUAGE plpgsql STABLE;
+
+-- Совместимая функция match_documents для кода/клиентов, ожидающих старое имя
+CREATE OR REPLACE FUNCTION match_documents(
+  query_embedding vector(768),
+  match_count int DEFAULT 10
+)
+RETURNS TABLE (
+  id uuid,
+  document_id uuid,
+  chunk_index int,
+  content text,
+  embedding vector(768),
+  checksum text,
+  created_at timestamptz,
+  l2_distance float,
+  fts_rank float,
+  hybrid_score float
+)
+AS $$
+BEGIN
+  RETURN QUERY
+  SELECT * FROM hybrid_search_chunks(query_embedding, '', match_count);
+END;
+$$ LANGUAGE plpgsql STABLE;
