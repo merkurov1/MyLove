@@ -9,11 +9,12 @@ interface Source {
 
 interface FileUploaderProps {
   sources: Source[]
+  sourceId: string
+  setSourceId: (id: string) => void
 }
 
-export default function FileUploader({ sources }: FileUploaderProps) {
+export default function FileUploader({ sources, sourceId, setSourceId }: FileUploaderProps) {
   const [file, setFile] = useState<File | null>(null)
-  const [sourceId, setSourceId] = useState<string>('')
   const [isLoading, setIsLoading] = useState(false)
   const [message, setMessage] = useState<string>('')
 

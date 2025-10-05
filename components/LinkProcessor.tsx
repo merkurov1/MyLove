@@ -10,11 +10,12 @@ interface Source {
 
 interface LinkProcessorProps {
   sources: Source[]
+  sourceId: string
+  setSourceId: (id: string) => void
 }
 
-export default function LinkProcessor({ sources }: LinkProcessorProps) {
+export default function LinkProcessor({ sources, sourceId, setSourceId }: LinkProcessorProps) {
   const [links, setLinks] = useState('')
-  const [sourceId, setSourceId] = useState<string>('')
   const [isLoading, setIsLoading] = useState(false)
   const [message, setMessage] = useState<string>('')
 

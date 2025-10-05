@@ -1,6 +1,5 @@
 import { supabase } from '@/utils/supabase/server'
-import FileUploader from '@/components/FileUploader'
-import LinkProcessor from '@/components/LinkProcessor'
+import UploadTabs from '@/components/UploadTabs'
 
 interface Source {
   id: string
@@ -25,22 +24,7 @@ export default async function UploadPage() {
             Загружайте файлы и ссылки в базу знаний
           </p>
         </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-8">
-            <h2 className="text-2xl font-semibold text-gray-800 dark:text-gray-100 mb-6">
-              Загрузка файлов
-            </h2>
-            <FileUploader sources={sources || []} />
-          </div>
-
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-8">
-            <h2 className="text-2xl font-semibold text-gray-800 dark:text-gray-100 mb-6">
-              Обработка ссылок
-            </h2>
-            <LinkProcessor sources={sources || []} />
-          </div>
-        </div>
+        <UploadTabs sources={sources || []} />
       </div>
     </div>
   )

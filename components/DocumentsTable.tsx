@@ -21,28 +21,34 @@ export default function DocumentsTable() {
   const [sources, setSources] = useState<{id: string, name: string}[]>([])
 
   const fetchDocs = async () => {
-    setLoading(true)
-    setError('')
-    try {
-      const [docsRes, sourcesRes] = await Promise.all([
-        fetch('/api/documents'),
-        fetch('/api/sources')
-      ])
-      const docsData = await docsRes.json()
-      const sourcesData = await sourcesRes.json()
-      if (docsData.error) setError(docsData.error)
-      else {
-        setDocs(docsData.docs.map((doc: Doc) => ({
-          ...doc,
-          source_name: sourcesData.sources?.find((s: any) => s.id === doc.source_id)?.name || doc.source_id
-        })))
+      setLoading(true)
+      setError('')
+      try {
+        const [docsRes, sourcesRes] = await Promise.all([
+          fetch('/api/documents'),
+          fetch('/api/sources')
+        ])
+        if (!docsRes.ok) {
+          const err = await docsRes.json()
+          setError(err.error || 'Ошибка доступа к документам')
+          setDocs([])
+          return
+        }
+        const docsData = await docsRes.json()
+        const sourcesData = sourcesRes.ok ? await sourcesRes.json() : { sources: [] }
+        if (docsData.error) setError(docsData.error)
+        else {
+          setDocs(docsData.docs.map((doc: Doc) => ({
+            ...doc,
+            source_name: sourcesData.sources?.find((s: any) => s.id === doc.source_id)?.name || doc.source_id
+          })))
+        }
+        if (sourcesData.sources) setSources(sourcesData.sources)
+      } catch (e: any) {
+        setError(e?.message || 'Ошибка загрузки документов')
+      } finally {
+        setLoading(false)
       }
-      if (sourcesData.sources) setSources(sourcesData.sources)
-    } catch (e) {
-      setError('Ошибка загрузки документов')
-    } finally {
-      setLoading(false)
-    }
   }
 
   useEffect(() => { fetchDocs() }, [])
