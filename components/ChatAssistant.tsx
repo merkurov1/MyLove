@@ -21,6 +21,7 @@ export default function ChatAssistant({ sources = [] }: ChatAssistantProps) {
   const [chatHistory, setChatHistory] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [selectedModel, setSelectedModel] = useState('command-r-plus');
+  const [embeddingProvider, setEmbeddingProvider] = useState('voyage');
   const [debugInfo, setDebugInfo] = useState<object | null>(null);
   const [sourceId, setSourceId] = useState('');
 
@@ -29,6 +30,15 @@ export default function ChatAssistant({ sources = [] }: ChatAssistantProps) {
     { id: 'command-r', name: 'Command R' },
     { id: 'command', name: 'Command' },
     { id: 'base', name: 'Base' },
+  ];
+
+  // Список embedding-провайдеров с описаниями
+  const embeddingProviders = [
+    { id: 'voyage', name: 'Voyage AI (voyage-2, 768d, платно/лимит)' },
+    { id: 'huggingface', name: 'Hugging Face (all-MiniLM-L6-v2, бесплатно)' },
+    { id: 'fireworks', name: 'Fireworks (nomic-embed, лимит)' },
+    { id: 'openai', name: 'OpenAI (ada-002, лимит)' },
+    { id: 'cohere', name: 'Cohere (embed-english-v3.0, лимит)' },
   ];
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -55,7 +65,7 @@ export default function ChatAssistant({ sources = [] }: ChatAssistantProps) {
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: userInput, model: selectedModel, sourceId }),
+        body: JSON.stringify({ query: userInput, model: selectedModel, sourceId, embeddingProvider }),
       });
 
       setDebugInfo(prev => ({
@@ -113,6 +123,21 @@ export default function ChatAssistant({ sources = [] }: ChatAssistantProps) {
               {models.map((model) => (
                 <option key={model.id} value={model.id}>
                   {model.name}
+                </option>
+              ))}
+            </select>
+            <label htmlFor="embedding-provider-select" className="text-sm font-medium text-gray-700 ml-4">
+              Embedding:
+            </label>
+            <select
+              id="embedding-provider-select"
+              value={embeddingProvider}
+              onChange={(e) => setEmbeddingProvider(e.target.value)}
+              className="border border-gray-300 rounded px-3 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              {embeddingProviders.map((prov) => (
+                <option key={prov.id} value={prov.id}>
+                  {prov.name}
                 </option>
               ))}
             </select>
