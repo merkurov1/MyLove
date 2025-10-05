@@ -20,7 +20,7 @@ export default async function Page() {
         </div>
 
         <div className="max-w-4xl mx-auto">
-          <ChatAssistant sources={sources || []} />
+          <ChatAssistant />
         </div>
       </div>
     </div>
