@@ -78,7 +78,7 @@ export async function POST(req: NextRequest) {
         if (!answer) {
           return NextResponse.json({ error: 'Пустой ответ от модели' }, { status: 500 })
         }
-        return NextResponse.json({ answer })
+        return NextResponse.json({ reply: answer })
       } catch (err: any) {
         return NextResponse.json({ error: err?.message || 'Ошибка генерации ответа' }, { status: 500 })
       }

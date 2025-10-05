@@ -1,80 +1,92 @@
-'use client'
-import { useState, useRef, useEffect } from 'react'
+"use client";
+import { useState, useRef, useEffect } from 'react';
 
 interface Message {
-  role: 'user' | 'assistant'
-  content: string
+  role: 'user' | 'assistant';
+  content: string;
 }
 
 interface Source {
-  id: string
-  name: string
-  description?: string
+  id: string;
+  name: string;
+  description?: string;
 }
 
 interface ChatAssistantProps {
-  sources?: Source[]
+  sources?: Source[];
 }
 
 export default function ChatAssistant({ sources = [] }: ChatAssistantProps) {
-  const [userInput, setUserInput] = useState('')
-  const [chatHistory, setChatHistory] = useState<Message[]>([])
-  const [isLoading, setIsLoading] = useState(false)
-  const [selectedModel, setSelectedModel] = useState('command-r-plus')
-  const [debugInfo, setDebugInfo] = useState<object | null>(null)
-  const [sourceId, setSourceId] = useState('')
+  const [userInput, setUserInput] = useState('');
+  const [chatHistory, setChatHistory] = useState<Message[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [selectedModel, setSelectedModel] = useState('command-r-plus');
+  const [debugInfo, setDebugInfo] = useState<object | null>(null);
+  const [sourceId, setSourceId] = useState('');
 
   const models = [
     { id: 'command-r-plus', name: 'Command R+ (лучший)' },
     { id: 'command-r', name: 'Command R' },
     { id: 'command', name: 'Command' },
-    { id: 'base', name: 'Base' }
-  ]
+    { id: 'base', name: 'Base' },
+  ];
 
-  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [chatHistory, isLoading])
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [chatHistory, isLoading]);
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!userInput.trim()) return
+    e.preventDefault();
+    if (!userInput.trim()) return;
 
-    const userMessage: Message = { role: 'user', content: userInput }
-    setChatHistory(prev => [...prev, userMessage])
-    setIsLoading(true)
+    const userMessage: Message = { role: 'user', content: userInput };
+    setChatHistory(prev => [...prev, userMessage]);
+    setIsLoading(true);
     setDebugInfo({
       level: 'INFO',
       status: 'Sending request...',
       timestamp: new Date().toISOString(),
       query: userInput,
-      model: selectedModel
-    })
+      model: selectedModel,
+    });
     try {
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: userInput, model: selectedModel, sourceId })
-      })
+        body: JSON.stringify({ query: userInput, model: selectedModel, sourceId }),
+      });
 
-      // ШАГ 3: Проверяем статус ответа
       setDebugInfo(prev => ({
-        ...prev,
+        ...(prev || {}),
         responseStatus: res.status,
         responseHeaders: Object.fromEntries(res.headers.entries()),
-        timestamp: new Date().toISOString()
-      }))
+        timestamp: new Date().toISOString(),
+      }));
 
-      // ШАГ 4: Обрабатываем неуспешный ответ сервера
-      setChatHistory(prev => [...prev, {
-        role: 'assistant',
-        content: 'Ошибка получения ответа от ассистента.'
-      }])
+      if (!res.ok) {
+        setChatHistory(prev => [
+          ...prev,
+          { role: 'assistant', content: 'Ошибка получения ответа от ассистента.' },
+        ]);
+        return;
+      }
+
+      const data = await res.json();
+      setChatHistory(prev => [
+        ...prev,
+        { role: 'assistant', content: data.reply || 'Нет ответа.' },
+      ]);
+    } catch (err) {
+      setChatHistory(prev => [
+        ...prev,
+        { role: 'assistant', content: 'Ошибка получения ответа от ассистента.' },
+      ]);
     } finally {
-      setIsLoading(false)
+      setIsLoading(false);
     }
-  }
+  };
 
   return (
     <div className="bg-white rounded-lg shadow-lg overflow-hidden">
@@ -159,5 +171,5 @@ export default function ChatAssistant({ sources = [] }: ChatAssistantProps) {
         )}
       </div>
     </div>
-  )
+  );
 }

@@ -1,13 +1,28 @@
-"use client"
-import { useEffect, useState } from 'react'
+
+"use client";
+import React, { useEffect, useState } from "react";
+
+interface Stats {
+  documents?: number;
+  chunks?: number;
+  conversations?: number;
+  messages?: number;
+  sources_count?: number;
+  documents_count?: number;
+  total_content_length?: number;
+  providers_used?: string[];
+}
 
 export default function StatsPanel() {
-  const [stats, setStats] = useState<any>(null)
-  const [loading, setLoading] = useState(true)
+  const [stats, setStats] = useState<Stats | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch('/api/stats').then(r => r.json()).then(setStats).finally(() => setLoading(false))
-  }, [])
+    fetch("/api/stats")
+      .then((res) => res.json())
+      .then(setStats)
+      .finally(() => setLoading(false));
+  }, []);
 
   if (loading) return (
     <div className="bg-white dark:bg-gray-950 rounded-lg shadow-lg p-8 mb-8 animate-pulse">
@@ -17,8 +32,8 @@ export default function StatsPanel() {
       <div className="h-3 w-1/3 mb-2 bg-gray-200 dark:bg-gray-700 rounded" />
       <div className="h-3 w-1/4 mb-2 bg-gray-200 dark:bg-gray-700 rounded" />
     </div>
-  )
-  if (!stats) return <div>Нет данных</div>
+  );
+  if (!stats) return <div>Нет данных</div>;
 
   return (
     <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 mb-6 max-w-xl mx-auto">
@@ -30,15 +45,15 @@ export default function StatsPanel() {
       </h2>
       <div className="grid grid-cols-2 gap-6">
         <div className="flex flex-col items-center">
-          <div className="text-2xl font-bold text-blue-600">{stats.sources_count}</div>
+          <div className="text-2xl font-bold text-blue-600">{stats.sources_count ?? stats.documents}</div>
           <div className="text-gray-500 text-sm">Источников</div>
         </div>
         <div className="flex flex-col items-center">
-          <div className="text-2xl font-bold text-blue-600">{stats.documents_count}</div>
+          <div className="text-2xl font-bold text-blue-600">{stats.documents_count ?? stats.chunks}</div>
           <div className="text-gray-500 text-sm">Документов</div>
         </div>
         <div className="flex flex-col items-center">
-          <div className="text-2xl font-bold text-blue-600">{stats.total_content_length}</div>
+          <div className="text-2xl font-bold text-blue-600">{stats.total_content_length ?? stats.messages}</div>
           <div className="text-gray-500 text-sm">Символов</div>
         </div>
         <div className="flex flex-col items-center">
@@ -47,5 +62,5 @@ export default function StatsPanel() {
         </div>
       </div>
     </div>
-  )
+  );
 }

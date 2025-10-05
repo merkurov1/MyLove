@@ -1,86 +1,102 @@
-"use client"
-import { useState } from 'react'
+"use client";
+import React, { useRef, useState } from "react";
 
-interface Source {
-  id: string
-  name: string
-  description?: string
-}
+export default function FileUploader() {
+  const [file, setFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [message, setMessage] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
-interface FileUploaderProps {
-  sources: Source[]
-  sourceId: string
-  setSourceId: (id: string) => void
-}
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0] || null;
+    setFile(f);
+    setMessage(null);
+  };
 
-export default function FileUploader({ sources, sourceId, setSourceId }: FileUploaderProps) {
-  const [file, setFile] = useState<File | null>(null)
-  const [isLoading, setIsLoading] = useState(false)
-  const [message, setMessage] = useState<string>('')
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    const f = e.dataTransfer.files?.[0] || null;
+    setFile(f);
+    setMessage(null);
+  };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!file || !sourceId) {
-      setMessage('Пожалуйста, выберите файл и источник')
-      return
-    }
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+  };
 
-    setIsLoading(true)
-    setMessage('')
-
+  const handleUpload = async () => {
+    if (!file) return;
+    setUploading(true);
+    setProgress(0);
+    setMessage(null);
+    const formData = new FormData();
+    formData.append("file", file);
     try {
-      const formData = new FormData()
-      formData.append('file', file)
-      formData.append('type', 'file')
-      formData.append('sourceId', sourceId)
-
-      const response = await fetch('/api/process', {
-        method: 'POST',
+      const res = await fetch("/api/ingest", {
+        method: "POST",
         body: formData,
-      })
-
-      let result: any = {}
-      try {
-        result = await response.json()
-      } catch (jsonErr) {
-        setMessage('Ошибка парсинга ответа сервера: ' + String(jsonErr))
-        return
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setMessage("Файл успешно загружен и обработан!");
+      } else {
+        setMessage(data.error || "Ошибка загрузки файла");
       }
-
-      if (!response.ok || result.errors?.length) {
-        setMessage('Ошибка загрузки файла: ' + (result.errors ? JSON.stringify(result.errors, null, 2) : response.statusText))
-        return
-      }
-
-      setMessage(`Файл успешно обработан! Чанков: ${result.totalChunks}`)
-      setFile(null)
-      setSourceId('')
-    } catch (error: any) {
-      setMessage('Ошибка при загрузке файла: ' + (error?.message || String(error)))
+    } catch (err) {
+      setMessage("Ошибка загрузки файла");
     } finally {
-      setIsLoading(false)
+      setUploading(false);
+      setProgress(0);
+      setFile(null);
+      if (inputRef.current) inputRef.current.value = "";
     }
-  }
+  };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4 bg-gray-50 dark:bg-gray-900 p-6 rounded-lg shadow">
-      <label className="block text-sm font-medium text-gray-700 mb-2">Файл для загрузки</label>
-      <input
-        type="file"
-        onChange={e => setFile(e.target.files?.[0] || null)}
-        className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
-        placeholder="Выберите файл..."
-      />
-      <button
-        type="submit"
-        disabled={isLoading}
-        className="w-full bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 disabled:opacity-50 font-semibold transition-colors"
+    <div className="max-w-lg mx-auto p-6 bg-white dark:bg-gray-900 rounded-lg shadow-lg mt-8">
+      <div
+        className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors ${file ? "border-blue-500 bg-blue-50 dark:bg-blue-900/20" : "border-gray-300 dark:border-gray-700 hover:border-blue-400"}`}
+        onClick={() => inputRef.current?.click()}
+        onDrop={handleDrop}
+        onDragOver={handleDragOver}
       >
-        {isLoading ? (
-          <span className="flex items-center justify-center"><svg className="animate-spin h-5 w-5 mr-2 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path></svg>Загрузка...</span>
-        ) : 'Загрузить'}
-      </button>
-      {message && <div className={`text-sm ${message.includes('успешно') ? 'text-green-600' : 'text-red-500'}`}>{message}</div>}
-    </form>
-  )
+        <input
+          ref={inputRef}
+          type="file"
+          className="hidden"
+          onChange={handleFileChange}
+          accept=".txt,.pdf,.doc,.docx,.md,.rtf"
+          disabled={uploading}
+        />
+        {file ? (
+          <div>
+            <div className="font-semibold text-blue-700 dark:text-blue-300 mb-2">{file.name}</div>
+            <div className="text-xs text-gray-500 mb-2">{(file.size / 1024).toFixed(1)} KB</div>
+            <button
+              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition disabled:opacity-50"
+              onClick={handleUpload}
+              disabled={uploading}
+            >
+              {uploading ? "Загрузка..." : "Загрузить"}
+            </button>
+          </div>
+        ) : (
+          <div className="text-gray-400">Перетащите файл сюда или кликните для выбора</div>
+        )}
+      </div>
+      {progress > 0 && (
+        <div className="w-full bg-gray-200 rounded-full h-2 mt-4">
+          <div
+            className="bg-blue-600 h-2 rounded-full transition-all"
+            style={{ width: `${progress}%` }}
+          />
+        </div>
+      )}
+      {message && (
+        <div className={`mt-4 text-center ${message.includes("успешно") ? "text-green-600" : "text-red-600"}`}>{message}</div>
+      )}
+    </div>
+  );
 }
+
