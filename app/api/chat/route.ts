@@ -4,7 +4,17 @@ import { getEmbedding, EmbeddingProvider } from '@/lib/embedding'
 
 export async function POST(req: NextRequest) {
   const startTime = Date.now()
+  // Логируем наличие всех ключей окружения для embedding и supabase
   console.log(`[${new Date().toISOString()}] Chat API request started`)
+  console.log('[ENV CHECK] VOYAGE_API_KEY:', !!process.env.VOYAGE_API_KEY)
+  console.log('[ENV CHECK] HF_API_KEY:', !!process.env.HF_API_KEY)
+  console.log('[ENV CHECK] FIREWORKS_API_KEY:', !!process.env.FIREWORKS_API_KEY)
+  console.log('[ENV CHECK] OPENAI_API_KEY:', !!process.env.OPENAI_API_KEY)
+  console.log('[ENV CHECK] COHERE_API_KEY:', !!process.env.COHERE_API_KEY)
+  console.log('[ENV CHECK] GROQ_API_KEY:', !!process.env.GROQ_API_KEY)
+  console.log('[ENV CHECK] MIXEDBREAD_API_KEY:', !!process.env.MIXEDBREAD_API_KEY)
+  console.log('[ENV CHECK] NEXT_PUBLIC_SUPABASE_URL:', !!process.env.NEXT_PUBLIC_SUPABASE_URL)
+  console.log('[ENV CHECK] NEXT_PUBLIC_SUPABASE_ANON_KEY:', !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)
 
   try {
     const { query, sourceId, embeddingProvider } = await req.json()
