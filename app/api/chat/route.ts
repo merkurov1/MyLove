@@ -48,7 +48,21 @@ export async function POST(req: NextRequest) {
     try {
       queryEmbedding = await getEmbedding(query, provider)
     } catch (embedErr: any) {
-      // В ответ — подробная ошибка embedding
+      // Логируем ошибку embedding в консоль Vercel
+      console.error('[EMBEDDING ERROR]', {
+        error: embedErr?.message,
+        stack: embedErr?.stack,
+        provider,
+        env: {
+          VOYAGE_API_KEY: !!process.env.VOYAGE_API_KEY,
+          HF_API_KEY: !!process.env.HF_API_KEY,
+          FIREWORKS_API_KEY: !!process.env.FIREWORKS_API_KEY,
+          OPENAI_API_KEY: !!process.env.OPENAI_API_KEY,
+          COHERE_API_KEY: !!process.env.COHERE_API_KEY,
+          GROQ_API_KEY: !!process.env.GROQ_API_KEY,
+          MIXEDBREAD_API_KEY: !!process.env.MIXEDBREAD_API_KEY,
+        }
+      })
       return NextResponse.json({
         error: 'Ошибка embedding',
         message: embedErr?.message,
