@@ -67,46 +67,6 @@ export default function ChatAssistant({ sources = [] }: ChatAssistantProps) {
       }))
 
       // ШАГ 4: Обрабатываем неуспешный ответ сервера
-      if (!res.ok) {
-        const errorBody = await res.json()
-        setDebugInfo({
-          level: 'SERVER_ERROR',
-          status: res.status,
-          body: errorBody,
-          timestamp: new Date().toISOString(),
-          error: errorBody.error || 'Unknown server error',
-          details: errorBody.details || 'No additional details'
-        })
-        setChatHistory(prev => [...prev, {
-          role: 'assistant',
-          content: `Ошибка сервера: ${errorBody.error || 'Неизвестная ошибка'}`
-        }])
-        return
-      }
-
-      // ШАГ 5: Обрабатываем успешный ответ
-      const data = await res.json()
-      setDebugInfo({
-        level: 'SUCCESS',
-        status: 200,
-        message: 'Response received successfully',
-        timestamp: new Date().toISOString(),
-        responseData: data,
-        answerLength: data.answer?.length || 0
-      })
-
-      setChatHistory(prev => [...prev, { role: 'assistant', content: data.answer }])
-
-    } catch (err: any) {
-      // ШАГ 6: Обрабатываем ошибки клиента (сеть, etc.)
-      setDebugInfo({
-        level: 'CLIENT_ERROR',
-        message: err.message,
-        timestamp: new Date().toISOString(),
-        error: err.toString(),
-        stack: err.stack?.substring(0, 500)
-      })
-
       setChatHistory(prev => [...prev, {
         role: 'assistant',
         content: 'Ошибка получения ответа от ассистента.'

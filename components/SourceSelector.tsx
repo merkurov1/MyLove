@@ -1,39 +1,35 @@
 'use client'
 
-import { useState } from 'react'
 
-export default function SourceSelector() {
-  const [selectedSource, setSelectedSource] = useState<string>('c5aab739-7112-4360-be9e-45edf4287c42')
+interface Source {
+  id: string
+  name: string
+  description?: string
+}
 
-  // Временно используем статичные данные вместо запроса к Supabase
-  const staticSources = [
-    { id: 'c5aab739-7112-4360-be9e-45edf4287c42', name: 'AI Ассистент', description: 'Основной источник данных' },
-    { id: 'test-2', name: 'Документация', description: 'Техническая документация' },
-    { id: 'test-3', name: 'Веб-статьи', description: 'Статьи из интернета' },
-    { id: 'test-4', name: 'YouTube', description: 'Видео транскрипции' }
-  ]
+interface SourceSelectorProps {
+  sources: Source[]
+  sourceId: string
+  setSourceId: (id: string) => void
+}
 
+export default function SourceSelector({ sources, sourceId, setSourceId }: SourceSelectorProps) {
   return (
-    <div className="space-y-4">
-      <label htmlFor="source-select" className="block text-sm font-medium text-gray-700">
-        Выберите источник данных:
+    <div className="mb-4">
+      <label className="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
+        Источник
+        <span className="text-xs text-gray-400" title="Документы будут привязаны к выбранному источнику">?</span>
       </label>
       <select
-        id="source-select"
-        value={selectedSource}
-        onChange={(e) => setSelectedSource(e.target.value)}
-        className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+        value={sourceId}
+        onChange={e => setSourceId(e.target.value)}
+        className="w-full border border-gray-300 dark:border-gray-700 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-900"
       >
-        {staticSources.map((source) => (
-          <option key={source.id} value={source.id}>
-            {source.name} {source.description && `- ${source.description}`}
-          </option>
+        <option value="" disabled>Выберите источник</option>
+        {sources.map((source) => (
+          <option key={source.id} value={source.id}>{source.name}</option>
         ))}
       </select>
-      
-      <p className="text-sm text-gray-500">
-        Выбранный источник: {staticSources.find(s => s.id === selectedSource)?.name}
-      </p>
     </div>
   )
 }

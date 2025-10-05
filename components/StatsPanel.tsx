@@ -21,21 +21,31 @@ export default function StatsPanel() {
   if (!stats) return <div>Нет данных</div>
 
   return (
-    <div className="bg-white rounded-lg shadow-lg p-8 mb-8">
-      <h2 className="text-2xl font-semibold text-gray-800 mb-4">Статистика</h2>
-      <div className="mb-2">Всего документов: <b>{stats.totalDocs}</b></div>
-      <div className="mb-2">По источникам:</div>
-      <ul className="mb-2">
-        {(Object.entries(stats.sourceCounts) as [string, number][]).map(([src, cnt]) => (
-          <li key={src} className="text-sm text-gray-700">{src}: <b>{cnt}</b></li>
-        ))}
-      </ul>
-      <div className="mb-2">По типам контента:</div>
-      <ul>
-        {(Object.entries(stats.typeCounts) as [string, number][]).map(([type, cnt]) => (
-          <li key={type} className="text-sm text-gray-700">{type}: <b>{cnt}</b></li>
-        ))}
-      </ul>
+    <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6 mb-6 max-w-xl mx-auto">
+      <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
+        <svg className="h-6 w-6 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 17a2.5 2.5 0 002.5-2.5V15a2.5 2.5 0 00-2.5-2.5H9.5A2.5 2.5 0 007 15v.5A2.5 2.5 0 009.5 18H11zm0 0v2m0-2a2.5 2.5 0 01-2.5-2.5V15a2.5 2.5 0 012.5-2.5h1.5A2.5 2.5 0 0116 15v.5A2.5 2.5 0 0113.5 18H11zm0 0v2" />
+        </svg>
+        Статистика
+      </h2>
+      <div className="grid grid-cols-2 gap-6">
+        <div className="flex flex-col items-center">
+          <div className="text-2xl font-bold text-blue-600">{stats.sources_count}</div>
+          <div className="text-gray-500 text-sm">Источников</div>
+        </div>
+        <div className="flex flex-col items-center">
+          <div className="text-2xl font-bold text-blue-600">{stats.documents_count}</div>
+          <div className="text-gray-500 text-sm">Документов</div>
+        </div>
+        <div className="flex flex-col items-center">
+          <div className="text-2xl font-bold text-blue-600">{stats.total_content_length}</div>
+          <div className="text-gray-500 text-sm">Символов</div>
+        </div>
+        <div className="flex flex-col items-center">
+          <div className="text-2xl font-bold text-blue-600">{stats.providers_used?.join(', ') || '—'}</div>
+          <div className="text-gray-500 text-sm">Провайдеры</div>
+        </div>
+      </div>
     </div>
   )
 }
