@@ -1,37 +1,67 @@
 // lib/embedding.ts
 import axios from 'axios';
 
+const HF_API_KEY = process.env.HF_API_KEY;
 const VOYAGE_API_KEY = process.env.VOYAGE_API_KEY;
-if (!VOYAGE_API_KEY) {
-  throw new Error('VOYAGE_API_KEY is not set in environment variables');
-}
-const VOYAGE_EMBED_URL = 'https://api.voyageai.com/v1/embeddings';
+const FIREWORKS_API_KEY = process.env.FIREWORKS_API_KEY;
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+const COHERE_API_KEY = process.env.COHERE_API_KEY;
 
-export async function getEmbedding(text: string): Promise<number[]> {
-  try {
-    const response = await axios.post(
-      VOYAGE_EMBED_URL,
-      {
-        model: 'voyage-2',
-        input: text,
-      },
-      {
-        headers: {
-          'Authorization': `Bearer ${VOYAGE_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-      }
-    );
-    if (!response.data?.data?.[0]?.embedding) {
-      throw new Error('No embedding returned from Voyage API');
+export type EmbeddingProvider = 'voyage' | 'huggingface' | 'fireworks' | 'openai' | 'cohere';
+
+export async function getEmbedding(text: string, provider: EmbeddingProvider = 'voyage'): Promise<number[]> {
+  switch (provider) {
+    case 'voyage': {
+      if (!VOYAGE_API_KEY) throw new Error('VOYAGE_API_KEY is not set');
+      const response = await axios.post(
+        'https://api.voyageai.com/v1/embeddings',
+        { model: 'voyage-2', input: text },
+        { headers: { Authorization: `Bearer ${VOYAGE_API_KEY}`, 'Content-Type': 'application/json' } }
+      );
+      if (!response.data?.data?.[0]?.embedding) throw new Error('No embedding returned from Voyage AI');
+      return response.data.data[0].embedding;
     }
-    return response.data.data[0].embedding;
-  } catch (error: any) {
-    if (error?.response) {
-      console.error('Voyage embedding error response:', JSON.stringify(error.response.data, null, 2));
-    } else {
-      console.error('Voyage embedding error:', error.message || error);
+    case 'huggingface': {
+      if (!HF_API_KEY) throw new Error('HF_API_KEY is not set');
+      const response = await axios.post(
+        'https://api-inference.huggingface.co/pipeline/feature-extraction/sentence-transformers/all-MiniLM-L6-v2',
+        { inputs: text },
+        { headers: { Authorization: `Bearer ${HF_API_KEY}` } }
+      );
+      if (!Array.isArray(response.data) || !Array.isArray(response.data[0])) throw new Error('No embedding returned from Hugging Face');
+      return response.data[0];
     }
-    throw new Error('Ошибка получения эмбеддинга от Voyage AI: ' + (error?.response?.data ? JSON.stringify(error.response.data) : error.message));
+    case 'fireworks': {
+      if (!FIREWORKS_API_KEY) throw new Error('FIREWORKS_API_KEY is not set');
+      const response = await axios.post(
+        'https://api.fireworks.ai/inference/v1/embeddings',
+        { model: 'nomic-ai/nomic-embed-text-v1.5', input: text },
+        { headers: { Authorization: `Bearer ${FIREWORKS_API_KEY}`, 'Content-Type': 'application/json' } }
+      );
+      if (!response.data?.data?.[0]?.embedding) throw new Error('No embedding returned from Fireworks');
+      return response.data.data[0].embedding;
+    }
+    case 'openai': {
+      if (!OPENAI_API_KEY) throw new Error('OPENAI_API_KEY is not set');
+      const response = await axios.post(
+        'https://api.openai.com/v1/embeddings',
+        { model: 'text-embedding-ada-002', input: text },
+        { headers: { Authorization: `Bearer ${OPENAI_API_KEY}`, 'Content-Type': 'application/json' } }
+      );
+      if (!response.data?.data?.[0]?.embedding) throw new Error('No embedding returned from OpenAI');
+      return response.data.data[0].embedding;
+    }
+    case 'cohere': {
+      if (!COHERE_API_KEY) throw new Error('COHERE_API_KEY is not set');
+      const response = await axios.post(
+        'https://api.cohere.ai/v1/embed',
+        { texts: [text], model: 'embed-english-v3.0' },
+        { headers: { Authorization: `Bearer ${COHERE_API_KEY}`, 'Content-Type': 'application/json' } }
+      );
+      if (!response.data?.embeddings?.[0]) throw new Error('No embedding returned from Cohere');
+      return response.data.embeddings[0];
+    }
+    default:
+      throw new Error('Unknown embedding provider');
   }
 }

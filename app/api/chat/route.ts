@@ -1,13 +1,13 @@
 
 import { NextRequest, NextResponse } from 'next/server'
-import { getEmbedding } from '@/lib/embedding'
+import { getEmbedding, EmbeddingProvider } from '@/lib/embedding'
 
 export async function POST(req: NextRequest) {
   const startTime = Date.now()
   console.log(`[${new Date().toISOString()}] Chat API request started`)
 
   try {
-  const { query, sourceId } = await req.json()
+  const { query, sourceId, embeddingProvider } = await req.json()
     console.log(`[${new Date().toISOString()}] Chat API called with:`, {
       query: query?.substring(0, 100),
       queryLength: query?.length
@@ -25,9 +25,16 @@ export async function POST(req: NextRequest) {
 
     console.log(`[${new Date().toISOString()}] Starting embedding request...`)
 
-    // 1. Получить embedding для запроса через Hugging Face
+    // 1. Получить embedding для запроса через выбранного провайдера
     const embeddingStart = Date.now()
-    const queryEmbedding = await getEmbedding(query)
+    // Определяем провайдера: из тела запроса, ENV или по умолчанию
+    let provider: EmbeddingProvider = 'voyage';
+    if (embeddingProvider && ['voyage','huggingface','fireworks','openai','cohere'].includes(embeddingProvider)) {
+      provider = embeddingProvider;
+    } else if (process.env.EMBEDDING_PROVIDER && ['voyage','huggingface','fireworks','openai','cohere'].includes(process.env.EMBEDDING_PROVIDER)) {
+      provider = process.env.EMBEDDING_PROVIDER as EmbeddingProvider;
+    }
+    const queryEmbedding = await getEmbedding(query, provider)
 
     // 2. Найти релевантные документы через Supabase функцию (через API)
         // (Здесь используем серверный supabase client, если нужно)
