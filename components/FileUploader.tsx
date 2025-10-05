@@ -39,16 +39,24 @@ export default function FileUploader({ sources, sourceId, setSourceId }: FileUpl
         body: formData,
       })
 
-      if (!response.ok) {
-        throw new Error('Ошибка загрузки файла')
+      let result: any = {}
+      try {
+        result = await response.json()
+      } catch (jsonErr) {
+        setMessage('Ошибка парсинга ответа сервера: ' + String(jsonErr))
+        return
       }
 
-      const result = await response.json()
+      if (!response.ok || result.errors?.length) {
+        setMessage('Ошибка загрузки файла: ' + (result.errors ? JSON.stringify(result.errors, null, 2) : response.statusText))
+        return
+      }
+
       setMessage(`Файл успешно обработан! Чанков: ${result.totalChunks}`)
       setFile(null)
       setSourceId('')
-    } catch (error) {
-      setMessage('Ошибка при загрузке файла')
+    } catch (error: any) {
+      setMessage('Ошибка при загрузке файла: ' + (error?.message || String(error)))
     } finally {
       setIsLoading(false)
     }
