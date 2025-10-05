@@ -1,6 +1,12 @@
 import ChatAssistant from '@/components/ChatAssistant'
+import { supabase } from '@/utils/supabase/server'
 
-export default function Page() {
+export default async function Page() {
+  const { data: sources } = await supabase
+    .from('sources')
+    .select('id, name, description')
+    .order('created_at', { ascending: false })
+
   return (
     <div className="py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-4xl mx-auto">
@@ -14,7 +20,7 @@ export default function Page() {
         </div>
 
         <div className="max-w-4xl mx-auto">
-          <ChatAssistant />
+          <ChatAssistant sources={sources || []} />
         </div>
       </div>
     </div>

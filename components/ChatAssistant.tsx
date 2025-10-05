@@ -6,13 +6,23 @@ interface Message {
   content: string
 }
 
-export default function ChatAssistant() {
+interface Source {
+  id: string
+  name: string
+  description?: string
+}
+
+interface ChatAssistantProps {
+  sources?: Source[]
+}
+
+export default function ChatAssistant({ sources = [] }: ChatAssistantProps) {
   const [userInput, setUserInput] = useState('')
   const [chatHistory, setChatHistory] = useState<Message[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [selectedModel, setSelectedModel] = useState('command-r-plus')
   const [debugInfo, setDebugInfo] = useState<object | null>(null)
-  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const [sourceId, setSourceId] = useState('')
 
   const models = [
     { id: 'command-r-plus', name: 'Command R+ (лучший)' },
@@ -20,6 +30,8 @@ export default function ChatAssistant() {
     { id: 'command', name: 'Command' },
     { id: 'base', name: 'Base' }
   ]
+
+  const messagesEndRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -31,24 +43,19 @@ export default function ChatAssistant() {
 
     const userMessage: Message = { role: 'user', content: userInput }
     setChatHistory(prev => [...prev, userMessage])
-    setUserInput('')
     setIsLoading(true)
-
+    setDebugInfo({
+      level: 'INFO',
+      status: 'Sending request...',
+      timestamp: new Date().toISOString(),
+      query: userInput,
+      model: selectedModel
+    })
     try {
-      // ШАГ 1: Начинаем отправку запроса
-      setDebugInfo({
-        level: 'INFO',
-        status: 'Sending request...',
-        timestamp: new Date().toISOString(),
-        query: userInput,
-        model: selectedModel
-      })
-
-      // ШАГ 2: Выполняем fetch запрос
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: userInput, model: selectedModel })
+        body: JSON.stringify({ query: userInput, model: selectedModel, sourceId })
       })
 
       // ШАГ 3: Проверяем статус ответа

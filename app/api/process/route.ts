@@ -134,9 +134,13 @@ async function processAndSaveChunks(
         continue
       }
 
+
       // Генерируем эмбеддинг
       console.log(`Chunk ${i + 1}: generating embedding...`)
       const embedding = await getEmbedding(chunk)
+      if (!Array.isArray(embedding) || embedding.length !== 384) {
+        throw new Error(`Embedding must be an array of 384 numbers, got: ${embedding && embedding.length}`)
+      }
       console.log(`Chunk ${i + 1}: embedding generated, length: ${embedding.length}`)
 
       // Сохраняем в базу данных
@@ -151,9 +155,9 @@ async function processAndSaveChunks(
           metadata: {
             ...metadata,
             chunk_length: chunk.length,
-            embedding_provider: 'huggingface'
+            embedding_provider: 'supabase-edge'
           },
-          embedding_provider: 'huggingface'
+          embedding_provider: 'supabase-edge'
         })
 
       if (error) {

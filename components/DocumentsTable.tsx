@@ -8,6 +8,7 @@ interface Doc {
   created_at: string
   source_id: string
   embedding_provider: string
+  source_name?: string // for UI only, not from DB
 }
 
 export default function DocumentsTable() {
@@ -16,14 +17,27 @@ export default function DocumentsTable() {
   const [error, setError] = useState('')
   const [deleting, setDeleting] = useState<string | null>(null)
 
+  // Optionally, fetch sources for mapping source_id to name
+  const [sources, setSources] = useState<{id: string, name: string}[]>([])
+
   const fetchDocs = async () => {
     setLoading(true)
     setError('')
     try {
-      const res = await fetch('/api/documents')
-      const data = await res.json()
-      if (data.error) setError(data.error)
-      else setDocs(data.docs)
+      const [docsRes, sourcesRes] = await Promise.all([
+        fetch('/api/documents'),
+        fetch('/api/sources')
+      ])
+      const docsData = await docsRes.json()
+      const sourcesData = await sourcesRes.json()
+      if (docsData.error) setError(docsData.error)
+      else {
+        setDocs(docsData.docs.map((doc: Doc) => ({
+          ...doc,
+          source_name: sourcesData.sources?.find((s: any) => s.id === doc.source_id)?.name || doc.source_id
+        })))
+      }
+      if (sourcesData.sources) setSources(sourcesData.sources)
     } catch (e) {
       setError('Ошибка загрузки документов')
     } finally {
@@ -90,7 +104,7 @@ export default function DocumentsTable() {
             {docs.map(doc => (
               <tr key={doc.id} className="hover:bg-blue-50 transition">
                 <td className="px-2 sm:px-4 py-2 max-w-xs truncate text-gray-900">{doc.content.slice(0, 120)}...</td>
-                <td className="px-2 sm:px-4 py-2 text-xs text-gray-500">{doc.metadata?.filename || doc.metadata?.url || '—'}</td>
+                <td className="px-2 sm:px-4 py-2 text-xs text-gray-500">{doc.source_name} <br /> <span className="text-gray-400">{doc.metadata?.filename || doc.metadata?.url || '—'}</span></td>
                 <td className="px-2 sm:px-4 py-2 text-xs text-gray-400">{doc.created_at?.slice(0, 19).replace('T', ' ')}</td>
                 <td className="px-2 sm:px-4 py-2">
                   <button

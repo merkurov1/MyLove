@@ -12,7 +12,7 @@ export async function POST(req: NextRequest) {
   console.log(`[${new Date().toISOString()}] Chat API request started`)
 
   try {
-    const { query } = await req.json()
+  const { query, sourceId } = await req.json()
     console.log(`[${new Date().toISOString()}] Chat API called with:`, {
       query: query?.substring(0, 100),
       queryLength: query?.length
@@ -39,9 +39,10 @@ export async function POST(req: NextRequest) {
     // 2. Найти релевантные документы через Supabase функцию
     console.log(`[${new Date().toISOString()}] Starting Supabase search...`)
     const searchStart = Date.now()
+    // Используем правильные имена аргументов
     const { data: matches, error } = await supabase.rpc('match_documents', {
       query_embedding: queryEmbedding,
-      match_count: 5  // Возвращаем топ-5 документов напрямую
+      match_count: 5
     })
     const searchTime = Date.now() - searchStart
     console.log(`[${new Date().toISOString()}] Supabase search completed in ${searchTime}ms`)
@@ -51,11 +52,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    console.log(`[${new Date().toISOString()}] Found ${matches?.length || 0} documents from Supabase`)
+    // Фильтрация по sourceId, если задан
+    let filteredMatches = matches || []
+    if (sourceId) {
+      filteredMatches = filteredMatches.filter((doc: any) => doc.source_id === sourceId)
+      console.log(`[${new Date().toISOString()}] Filtered by sourceId: ${sourceId}, found ${filteredMatches.length} documents`)
+    } else {
+      console.log(`[${new Date().toISOString()}] Found ${filteredMatches.length} documents from Supabase`)
+    }
 
     // 3. Формирование контекста из найденных документов
-    const context = (matches || []).map((doc: any) => doc.content).join('\n---\n')
-    console.log(`[${new Date().toISOString()}] Final context formed from ${matches?.length || 0} documents, total length: ${context.length}`)
+    const context = filteredMatches.map((doc: any) => doc.content).join('\n---\n')
+    console.log(`[${new Date().toISOString()}] Final context formed from ${filteredMatches.length} documents, total length: ${context.length}`)
 
     // 4. Сформировать промпт для LLM
     let contextText = context
