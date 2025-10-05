@@ -87,11 +87,24 @@ export async function POST(req: NextRequest) {
           process.env.NEXT_PUBLIC_SUPABASE_URL!,
           process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
         )
-        const { data: matches, error } = await supabase.rpc('match_documents', {
-          query_embedding: queryEmbedding,
-          match_count: 5
-        })
+        let matches, error;
+        try {
+          const rpcResult = await supabase.rpc('match_documents', {
+            query_embedding: queryEmbedding,
+            match_count: 5
+          })
+          matches = rpcResult.data;
+          error = rpcResult.error;
+        } catch (supabaseErr: any) {
+          console.error('[SUPABASE ERROR]', {
+            error: supabaseErr?.message,
+            stack: supabaseErr?.stack,
+            full: JSON.stringify(supabaseErr, Object.getOwnPropertyNames(supabaseErr)),
+          });
+          return NextResponse.json({ error: 'Supabase RPC error', message: supabaseErr?.message, stack: supabaseErr?.stack }, { status: 500 })
+        }
         if (error) {
+          console.error('[SUPABASE RPC ERROR]', { error: error.message, full: error });
           return NextResponse.json({ error: error.message, supabase: true }, { status: 500 })
         }
         let filteredMatches = matches || []
@@ -123,15 +136,22 @@ export async function POST(req: NextRequest) {
           )
           result = await response.json()
         } catch (hfErr: any) {
+          console.error('[HF GENERATION ERROR]', {
+            error: hfErr?.message,
+            stack: hfErr?.stack,
+            full: JSON.stringify(hfErr, Object.getOwnPropertyNames(hfErr)),
+          });
           return NextResponse.json({ error: 'Ошибка HuggingFace', message: hfErr?.message, stack: hfErr?.stack }, { status: 500 })
         }
         if (!Array.isArray(result) || !result[0]?.generated_text) {
+          console.error('[HF GENERATION BAD RESULT]', { raw: result });
           return NextResponse.json({ error: 'Ошибка генерации ответа Hugging Face', raw: result }, { status: 500 })
         }
         const answerRaw = result[0].generated_text
         // Извлекаем только ответ после [/INST]
         const answer = answerRaw.split('[/INST]')[1]?.trim() || answerRaw.trim()
         if (!answer) {
+          console.error('[HF GENERATION EMPTY ANSWER]', { raw: answerRaw });
           return NextResponse.json({ error: 'Пустой ответ от модели', raw: answerRaw }, { status: 500 })
         }
         return NextResponse.json({ reply: answer })
