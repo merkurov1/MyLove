@@ -7,7 +7,7 @@ export async function POST(req: NextRequest) {
   console.log(`[${new Date().toISOString()}] Chat API request started`)
 
   try {
-  const { query, sourceId, embeddingProvider } = await req.json()
+    const { query, sourceId, embeddingProvider } = await req.json()
     console.log(`[${new Date().toISOString()}] Chat API called with:`, {
       query: query?.substring(0, 100),
       queryLength: query?.length
@@ -34,7 +34,27 @@ export async function POST(req: NextRequest) {
     } else if (process.env.EMBEDDING_PROVIDER && ['voyage','huggingface','fireworks','openai','cohere'].includes(process.env.EMBEDDING_PROVIDER)) {
       provider = process.env.EMBEDDING_PROVIDER as EmbeddingProvider;
     }
-    const queryEmbedding = await getEmbedding(query, provider)
+    let queryEmbedding: number[] = [];
+    try {
+      queryEmbedding = await getEmbedding(query, provider)
+    } catch (embedErr: any) {
+      // В ответ — подробная ошибка embedding
+      return NextResponse.json({
+        error: 'Ошибка embedding',
+        message: embedErr?.message,
+        stack: embedErr?.stack,
+        provider,
+        env: {
+          VOYAGE_API_KEY: !!process.env.VOYAGE_API_KEY,
+          HF_API_KEY: !!process.env.HF_API_KEY,
+          FIREWORKS_API_KEY: !!process.env.FIREWORKS_API_KEY,
+          OPENAI_API_KEY: !!process.env.OPENAI_API_KEY,
+          COHERE_API_KEY: !!process.env.COHERE_API_KEY,
+          GROQ_API_KEY: !!process.env.GROQ_API_KEY,
+          MIXEDBREAD_API_KEY: !!process.env.MIXEDBREAD_API_KEY,
+        }
+      }, { status: 500 })
+    }
 
     // 2. Найти релевантные документы через Supabase функцию (через API)
         // (Здесь используем серверный supabase client, если нужно)
@@ -48,7 +68,7 @@ export async function POST(req: NextRequest) {
           match_count: 5
         })
         if (error) {
-          return NextResponse.json({ error: error.message }, { status: 500 })
+          return NextResponse.json({ error: error.message, supabase: true }, { status: 500 })
         }
         let filteredMatches = matches || []
         if (sourceId) {
@@ -64,30 +84,39 @@ export async function POST(req: NextRequest) {
         const finalPrompt = `[INST] Ты — экспертный ассистент. Используй только следующий контекст для ответа. Отвечай кратко и по делу. Если в контексте нет информации для ответа, скажи: "Я не нашел информации по вашему вопросу в своей базе знаний".\n\nКонтекст:\n${contextText}\n---\nВопрос: ${query} [/INST]`
 
         // 4. Вызов Hugging Face Inference API (Mistral)
-        const response = await fetch(
-          'https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.2',
-          {
-            headers: {
-              Authorization: `Bearer ${process.env.HF_API_KEY}`,
-              'Content-Type': 'application/json',
-            },
-            method: 'POST',
-            body: JSON.stringify({ inputs: finalPrompt, parameters: { max_new_tokens: 512 } }),
-          }
-        )
-        const result = await response.json()
+        let result: any = null;
+        try {
+          const response = await fetch(
+            'https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.2',
+            {
+              headers: {
+                Authorization: `Bearer ${process.env.HF_API_KEY}`,
+                'Content-Type': 'application/json',
+              },
+              method: 'POST',
+              body: JSON.stringify({ inputs: finalPrompt, parameters: { max_new_tokens: 512 } }),
+            }
+          )
+          result = await response.json()
+        } catch (hfErr: any) {
+          return NextResponse.json({ error: 'Ошибка HuggingFace', message: hfErr?.message, stack: hfErr?.stack }, { status: 500 })
+        }
         if (!Array.isArray(result) || !result[0]?.generated_text) {
-          return NextResponse.json({ error: 'Ошибка генерации ответа Hugging Face' }, { status: 500 })
+          return NextResponse.json({ error: 'Ошибка генерации ответа Hugging Face', raw: result }, { status: 500 })
         }
         const answerRaw = result[0].generated_text
         // Извлекаем только ответ после [/INST]
         const answer = answerRaw.split('[/INST]')[1]?.trim() || answerRaw.trim()
         if (!answer) {
-          return NextResponse.json({ error: 'Пустой ответ от модели' }, { status: 500 })
+          return NextResponse.json({ error: 'Пустой ответ от модели', raw: answerRaw }, { status: 500 })
         }
         return NextResponse.json({ reply: answer })
       } catch (err: any) {
-        return NextResponse.json({ error: err?.message || 'Ошибка генерации ответа' }, { status: 500 })
+        return NextResponse.json({
+          error: err?.message || 'Ошибка генерации ответа',
+          stack: err?.stack,
+          full: JSON.stringify(err, Object.getOwnPropertyNames(err)),
+        }, { status: 500 })
       }
     }
 
