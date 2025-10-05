@@ -40,7 +40,21 @@ export async function POST(req: NextRequest) {
     source_url: null,
   }).select().single();
   if (docError || !doc) {
-    return NextResponse.json({ error: 'Ошибка создания документа' }, { status: 500 });
+    console.error('[Ingest] Ошибка создания документа:', docError);
+    return NextResponse.json({
+      error: 'Ошибка создания документа',
+      supabaseError: docError,
+      env: {
+        SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
+        SERVICE_ROLE_KEY_SET: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
+        NODE_ENV: process.env.NODE_ENV,
+      },
+      fileMeta: {
+        name: file.name,
+        size: file.size,
+        type: file.type,
+      }
+    }, { status: 500 });
   }
 
   const chunkRows = chunks.map((content: string, i: number) => ({
@@ -52,7 +66,13 @@ export async function POST(req: NextRequest) {
   }));
   const { error: chunkError } = await supabase.from('document_chunks').insert(chunkRows);
   if (chunkError) {
-    return NextResponse.json({ error: 'Ошибка сохранения чанков' }, { status: 500 });
+    console.error('[Ingest] Ошибка сохранения чанков:', chunkError);
+    return NextResponse.json({
+      error: 'Ошибка сохранения чанков',
+      supabaseError: chunkError,
+      chunkRowsCount: chunkRows.length,
+      docId: doc.id
+    }, { status: 500 });
   }
 
   return NextResponse.json({ success: true, document_id: doc.id, totalChunks: chunks.length });
