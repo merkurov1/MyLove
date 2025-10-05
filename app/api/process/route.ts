@@ -140,8 +140,8 @@ async function processAndSaveChunks(
       // Генерируем эмбеддинг
       console.log(`Chunk ${i + 1}: generating embedding...`)
       const embedding = await getEmbedding(chunk)
-      if (!Array.isArray(embedding) || embedding.length !== 384) {
-        throw new Error(`Embedding must be an array of 384 numbers, got: ${embedding && embedding.length}`)
+      if (!Array.isArray(embedding) || embedding.length !== 768) {
+        throw new Error(`Embedding must be an array of 768 numbers, got: ${embedding && embedding.length}`)
       }
       console.log(`Chunk ${i + 1}: embedding generated, length: ${embedding.length}`)
       // Сохраняем в базу данных
@@ -156,9 +156,9 @@ async function processAndSaveChunks(
           metadata: {
             ...metadata,
             chunk_length: chunk.length,
-            embedding_provider: 'supabase-edge'
+            embedding_provider: 'fireworks-nomic-v1.5'
           },
-          embedding_provider: 'supabase-edge'
+          embedding_provider: 'fireworks-nomic-v1.5'
         })
       if (insertError) {
         errors.push({ stage: 'insert', chunk: i + 1, error: insertError })

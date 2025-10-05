@@ -1,22 +1,23 @@
 // lib/embedding.ts
-import { supabase } from '@/utils/supabase/client';
+import { OpenAI } from 'openai';
+
+const openai = new OpenAI({
+  apiKey: process.env.FIREWORKS_API_KEY,
+  baseURL: 'https://api.fireworks.ai/inference/v1',
+});
 
 export async function getEmbedding(text: string): Promise<number[]> {
   try {
-    // Вызываем Supabase Edge Function 'embedding'
-    const { data, error } = await supabase.functions.invoke('embedding', {
-      body: { text },
+    const res = await openai.embeddings.create({
+      model: 'nomic-ai/nomic-embed-text-v1.5',
+      input: text,
     });
-    if (error) throw error;
-    if (!data || typeof data !== 'object' || !Array.isArray(data.embedding)) {
-      throw new Error('Invalid response from embedding function');
+    if (!res.data?.[0]?.embedding || res.data[0].embedding.length !== 768) {
+      throw new Error('Invalid embedding response from Fireworks');
     }
-    if (data.embedding.length !== 384) {
-      throw new Error('Embedding must be 384-dim vector');
-    }
-    return data.embedding;
+    return res.data[0].embedding;
   } catch (error) {
-    console.error('Error getting embedding from Supabase Edge Function:', error);
+    console.error('Error getting embedding from Fireworks:', error);
     throw error;
   }
 }
