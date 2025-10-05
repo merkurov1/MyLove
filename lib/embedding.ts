@@ -1,23 +1,37 @@
 // lib/embedding.ts
-import { OpenAI } from 'openai';
+import axios from 'axios';
 
-const openai = new OpenAI({
-  apiKey: process.env.FIREWORKS_API_KEY,
-  baseURL: 'https://api.fireworks.ai/inference/v1',
-});
+const VOYAGE_API_KEY = process.env.VOYAGE_API_KEY;
+if (!VOYAGE_API_KEY) {
+  throw new Error('VOYAGE_API_KEY is not set in environment variables');
+}
+const VOYAGE_EMBED_URL = 'https://api.voyageai.com/v1/embeddings';
 
 export async function getEmbedding(text: string): Promise<number[]> {
   try {
-    const res = await openai.embeddings.create({
-      model: 'nomic-ai/nomic-embed-text-v1.5',
-      input: text,
-    });
-    if (!res.data?.[0]?.embedding || res.data[0].embedding.length !== 768) {
-      throw new Error('Invalid embedding response from Fireworks');
+    const response = await axios.post(
+      VOYAGE_EMBED_URL,
+      {
+        model: 'voyage-2',
+        input: text,
+      },
+      {
+        headers: {
+          'Authorization': `Bearer ${VOYAGE_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+    if (!response.data?.data?.[0]?.embedding) {
+      throw new Error('No embedding returned from Voyage API');
     }
-    return res.data[0].embedding;
-  } catch (error) {
-    console.error('Error getting embedding from Fireworks:', error);
-    throw error;
+    return response.data.data[0].embedding;
+  } catch (error: any) {
+    if (error?.response) {
+      console.error('Voyage embedding error response:', JSON.stringify(error.response.data, null, 2));
+    } else {
+      console.error('Voyage embedding error:', error.message || error);
+    }
+    throw new Error('Ошибка получения эмбеддинга от Voyage AI: ' + (error?.response?.data ? JSON.stringify(error.response.data) : error.message));
   }
 }
