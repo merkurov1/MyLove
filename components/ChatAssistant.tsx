@@ -1,74 +1,55 @@
 "use client";
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect } from "react";
 
 interface Message {
-  role: 'user' | 'assistant';
+  role: "user" | "assistant";
   content: string;
 }
 
-interface Source {
-  id: string;
-  name: string;
-  description?: string;
-}
-
-interface ChatAssistantProps {
-  sources?: Source[];
-}
-
-export default function ChatAssistant({ sources = [] }: ChatAssistantProps) {
-  const [userInput, setUserInput] = useState('');
+export default function ChatAssistant() {
+  const [userInput, setUserInput] = useState("");
   const [chatHistory, setChatHistory] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [selectedModel, setSelectedModel] = useState('command-r-plus');
-  const [embeddingProvider, setEmbeddingProvider] = useState('voyage');
+  const [embeddingProvider, setEmbeddingProvider] = useState("voyage");
   const [debugInfo, setDebugInfo] = useState<object | null>(null);
-  const [sourceId, setSourceId] = useState('');
-
-  const models = [
-    { id: 'command-r-plus', name: 'Command R+ (лучший)' },
-    { id: 'command-r', name: 'Command R' },
-    { id: 'command', name: 'Command' },
-    { id: 'base', name: 'Base' },
-  ];
-
-  // Список embedding-провайдеров с описаниями
-  const embeddingProviders = [
-    { id: 'voyage', name: 'Voyage AI (voyage-2, 768d, платно/лимит)' },
-    { id: 'huggingface', name: 'Hugging Face (all-MiniLM-L6-v2, бесплатно)' },
-    { id: 'fireworks', name: 'Fireworks (nomic-embed, лимит)' },
-    { id: 'openai', name: 'OpenAI (ada-002, лимит)' },
-    { id: 'cohere', name: 'Cohere (embed-english-v3.0, лимит)' },
-  ];
-
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  const embeddingProviders = [
+    { id: "voyage", name: "Voyage AI (voyage-2, 768d, платно/лимит)" },
+    { id: "huggingface", name: "Hugging Face (all-MiniLM-L6-v2, бесплатно)" },
+    { id: "fireworks", name: "Fireworks (nomic-embed, лимит)" },
+    { id: "openai", name: "OpenAI (ada-002, лимит)" },
+    { id: "cohere", name: "Cohere (embed-english-v3.0, лимит)" },
+    { id: "mixedbread", name: "Mixedbread (mxbai-embed-large-v1, бесплатно/лимит)" },
+    { id: "groq", name: "Groq (ada-002, быстро, лимит)" },
+  ];
+
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chatHistory, isLoading]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!userInput.trim()) return;
 
-    const userMessage: Message = { role: 'user', content: userInput };
-    setChatHistory(prev => [...prev, userMessage]);
+    const userMessage: Message = { role: "user", content: userInput };
+    setChatHistory((prev) => [...prev, userMessage]);
     setIsLoading(true);
     setDebugInfo({
-      level: 'INFO',
-      status: 'Sending request...',
+      level: "INFO",
+      status: "Sending request...",
       timestamp: new Date().toISOString(),
       query: userInput,
-      model: selectedModel,
+      embeddingProvider,
     });
     try {
-      const res = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: userInput, model: selectedModel, sourceId, embeddingProvider }),
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: userInput, embeddingProvider }),
       });
 
-      setDebugInfo(prev => ({
+      setDebugInfo((prev) => ({
         ...(prev || {}),
         responseStatus: res.status,
         responseHeaders: Object.fromEntries(res.headers.entries()),
@@ -76,22 +57,22 @@ export default function ChatAssistant({ sources = [] }: ChatAssistantProps) {
       }));
 
       if (!res.ok) {
-        setChatHistory(prev => [
+        setChatHistory((prev) => [
           ...prev,
-          { role: 'assistant', content: 'Ошибка получения ответа от ассистента.' },
+          { role: "assistant", content: "Ошибка получения ответа от ассистента." },
         ]);
         return;
       }
 
       const data = await res.json();
-      setChatHistory(prev => [
+      setChatHistory((prev) => [
         ...prev,
-        { role: 'assistant', content: data.reply || 'Нет ответа.' },
+        { role: "assistant", content: data.reply || "Нет ответа." },
       ]);
     } catch (err) {
-      setChatHistory(prev => [
+      setChatHistory((prev) => [
         ...prev,
-        { role: 'assistant', content: 'Ошибка получения ответа от ассистента.' },
+        { role: "assistant", content: "Ошибка получения ответа от ассистента." },
       ]);
     } finally {
       setIsLoading(false);
@@ -111,22 +92,7 @@ export default function ChatAssistant({ sources = [] }: ChatAssistantProps) {
             </p>
           </div>
           <div className="flex items-center gap-3">
-            <label htmlFor="model-select" className="text-sm font-medium text-gray-700">
-              Модель:
-            </label>
-            <select
-              id="model-select"
-              value={selectedModel}
-              onChange={(e) => setSelectedModel(e.target.value)}
-              className="border border-gray-300 rounded px-3 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              {models.map((model) => (
-                <option key={model.id} value={model.id}>
-                  {model.name}
-                </option>
-              ))}
-            </select>
-            <label htmlFor="embedding-provider-select" className="text-sm font-medium text-gray-700 ml-4">
+            <label htmlFor="embedding-provider-select" className="text-sm font-medium text-gray-700">
               Embedding:
             </label>
             <select
@@ -144,7 +110,6 @@ export default function ChatAssistant({ sources = [] }: ChatAssistantProps) {
           </div>
         </div>
       </div>
-
       <div className="flex flex-col h-96">
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
           {chatHistory.length === 0 && (
@@ -153,27 +118,34 @@ export default function ChatAssistant({ sources = [] }: ChatAssistantProps) {
             </div>
           )}
           {chatHistory.map((msg, i) => (
-            <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-              <div className={`max-w-[80%] px-4 py-2 rounded-lg text-sm whitespace-pre-line ${msg.role === 'user' ? 'bg-blue-600 text-white rounded-br-none' : 'bg-gray-100 text-gray-900 rounded-bl-none'}`}>
+            <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+              <div
+                className={`max-w-[80%] px-4 py-2 rounded-lg text-sm whitespace-pre-line ${
+                  msg.role === "user"
+                    ? "bg-blue-600 text-white rounded-br-none"
+                    : "bg-gray-100 text-gray-900 rounded-bl-none"
+                }`}
+              >
                 {msg.content}
               </div>
             </div>
           ))}
           {isLoading && (
             <div className="flex justify-start">
-              <div className="max-w-[80%] px-4 py-2 rounded-lg text-sm bg-gray-100 animate-pulse text-gray-400">AI думает...</div>
+              <div className="max-w-[80%] px-4 py-2 rounded-lg text-sm bg-gray-100 animate-pulse text-gray-400">
+                AI думает...
+              </div>
             </div>
           )}
           <div ref={messagesEndRef} />
         </div>
-
         <form onSubmit={handleSubmit} className="flex items-center gap-2 p-4 border-t bg-gray-50">
           <input
             type="text"
             className="flex-1 border rounded px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
             placeholder="Задайте вопрос..."
             value={userInput}
-            onChange={e => setUserInput(e.target.value)}
+            onChange={(e) => setUserInput(e.target.value)}
             disabled={isLoading}
           />
           <button
@@ -181,11 +153,9 @@ export default function ChatAssistant({ sources = [] }: ChatAssistantProps) {
             className="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700 disabled:opacity-50"
             disabled={isLoading || !userInput.trim()}
           >
-            {isLoading ? '...' : 'Отправить'}
+            {isLoading ? "..." : "Отправить"}
           </button>
         </form>
-
-        {/* Отладочная панель */}
         {debugInfo && (
           <div className="mt-4 p-4 bg-gray-100 rounded mx-4 mb-4">
             <h3 className="font-bold text-sm mb-2">Отладочная информация:</h3>

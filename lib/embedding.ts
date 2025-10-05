@@ -6,11 +6,37 @@ const VOYAGE_API_KEY = process.env.VOYAGE_API_KEY;
 const FIREWORKS_API_KEY = process.env.FIREWORKS_API_KEY;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const COHERE_API_KEY = process.env.COHERE_API_KEY;
+const GROQ_API_KEY = process.env.GROQ_API_KEY;
 
-export type EmbeddingProvider = 'voyage' | 'huggingface' | 'fireworks' | 'openai' | 'cohere';
+
+
+export type EmbeddingProvider = 'voyage' | 'huggingface' | 'fireworks' | 'openai' | 'cohere' | 'mixedbread' | 'groq';
 
 export async function getEmbedding(text: string, provider: EmbeddingProvider = 'voyage'): Promise<number[]> {
   switch (provider) {
+    case 'groq': {
+      if (!GROQ_API_KEY) throw new Error('GROQ_API_KEY is not set');
+      // Пример: https://console.groq.com/docs/api-reference/embeddings
+      const response = await axios.post(
+        'https://api.groq.com/openai/v1/embeddings',
+        { model: 'text-embedding-ada-002', input: text },
+        { headers: { Authorization: `Bearer ${GROQ_API_KEY}`, 'Content-Type': 'application/json' } }
+      );
+      if (!response.data?.data?.[0]?.embedding) throw new Error('No embedding returned from Groq');
+      return response.data.data[0].embedding;
+    }
+    case 'mixedbread': {
+      const MIXEDBREAD_API_KEY = process.env.MIXEDBREAD_API_KEY;
+      if (!MIXEDBREAD_API_KEY) throw new Error('MIXEDBREAD_API_KEY is not set');
+      // Mixedbread API: https://docs.mixedbread.ai/reference/post_v1-embeddings
+      const response = await axios.post(
+        'https://api.mixedbread.ai/v1/embeddings',
+        { model: 'mixedbread-ai/mxbai-embed-large-v1', input: text },
+        { headers: { Authorization: `Bearer ${MIXEDBREAD_API_KEY}`, 'Content-Type': 'application/json' } }
+      );
+      if (!response.data?.data?.[0]?.embedding) throw new Error('No embedding returned from Mixedbread');
+      return response.data.data[0].embedding;
+    }
     case 'voyage': {
       if (!VOYAGE_API_KEY) throw new Error('VOYAGE_API_KEY is not set');
       const response = await axios.post(
