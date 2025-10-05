@@ -21,13 +21,18 @@ export async function getVoyageEmbedding(text: string): Promise<number[]> {
         },
       }
     );
+    console.log('Voyage API embedding response:', JSON.stringify(response.data, null, 2));
     if (!response.data?.data?.[0]?.embedding) {
       throw new Error('No embedding returned from Voyage API');
     }
     return response.data.data[0].embedding;
   } catch (error: any) {
-    console.error('Voyage embedding error:', error?.response?.data || error.message || error);
-    throw new Error('Ошибка получения эмбеддинга от Voyage AI');
+    if (error?.response) {
+      console.error('Voyage embedding error response:', JSON.stringify(error.response.data, null, 2));
+    } else {
+      console.error('Voyage embedding error:', error.message || error);
+    }
+    throw new Error('Ошибка получения эмбеддинга от Voyage AI: ' + (error?.response?.data ? JSON.stringify(error.response.data) : error.message));
   }
 }
 
@@ -46,12 +51,17 @@ export async function getVoyageEmbeddings(texts: string[]): Promise<number[][]> 
         },
       }
     );
+    console.log('Voyage API batch embedding response:', JSON.stringify(response.data, null, 2));
     if (!response.data?.data || !Array.isArray(response.data.data)) {
       throw new Error('No embeddings returned from Voyage API');
     }
     return response.data.data.map((item: any) => item.embedding);
   } catch (error: any) {
-    console.error('Voyage batch embedding error:', error?.response?.data || error.message || error);
-    throw new Error('Ошибка batch-эмбеддинга от Voyage AI');
+    if (error?.response) {
+      console.error('Voyage batch embedding error response:', JSON.stringify(error.response.data, null, 2));
+    } else {
+      console.error('Voyage batch embedding error:', error.message || error);
+    }
+    throw new Error('Ошибка batch-эмбеддинга от Voyage AI: ' + (error?.response?.data ? JSON.stringify(error.response.data) : error.message));
   }
 }
