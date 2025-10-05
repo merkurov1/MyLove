@@ -115,26 +115,28 @@ async function processAndSaveChunks(
   console.log('Chunks created:', chunks.length)
   
   let savedChunks = 0
+  const errors: any[] = []
 
   for (let i = 0; i < chunks.length; i++) {
     const chunk = chunks[i]
     try {
       console.log(`Processing chunk ${i + 1}/${chunks.length}, length: ${chunk.length}`)
       const checksum = calculateChecksum(chunk)
-      
       // Проверяем, существует ли уже такой чанк
-      const { data: existingDoc } = await supabase
+      const { data: existingDoc, error: checkError } = await supabase
         .from('documents')
         .select('id')
         .eq('checksum', checksum)
         .single()
-
+      if (checkError && checkError.code !== 'PGRST116') {
+        errors.push({ stage: 'check-exists', chunk: i + 1, error: checkError })
+        console.error(`Chunk ${i + 1}: check-exists error:`, checkError)
+        continue
+      }
       if (existingDoc) {
         console.log(`Chunk ${i + 1}: already exists, skipping`)
         continue
       }
-
-
       // Генерируем эмбеддинг
       console.log(`Chunk ${i + 1}: generating embedding...`)
       const embedding = await getEmbedding(chunk)
@@ -142,10 +144,9 @@ async function processAndSaveChunks(
         throw new Error(`Embedding must be an array of 384 numbers, got: ${embedding && embedding.length}`)
       }
       console.log(`Chunk ${i + 1}: embedding generated, length: ${embedding.length}`)
-
       // Сохраняем в базу данных
       console.log(`Chunk ${i + 1}: saving to database...`)
-      const { error } = await supabase
+      const { error: insertError } = await supabase
         .from('documents')
         .insert({
           content: chunk,
@@ -159,19 +160,19 @@ async function processAndSaveChunks(
           },
           embedding_provider: 'supabase-edge'
         })
-
-      if (error) {
-        console.error(`Chunk ${i + 1}: save error:`, error)
+      if (insertError) {
+        errors.push({ stage: 'insert', chunk: i + 1, error: insertError })
+        console.error(`Chunk ${i + 1}: save error:`, insertError)
       } else {
         console.log(`Chunk ${i + 1}: saved successfully`)
         savedChunks++
       }
     } catch (error) {
+      errors.push({ stage: 'exception', chunk: i + 1, error: error instanceof Error ? error.message : error })
       console.error(`Chunk ${i + 1}: processing error:`, error)
     }
   }
-
-  return { totalChunks: chunks.length, savedChunks }
+  return { totalChunks: chunks.length, savedChunks, errors }
 }
 
 export async function POST(request: NextRequest) {
@@ -208,12 +209,12 @@ export async function POST(request: NextRequest) {
       console.log('Starting chunk processing...')
       const result = await processAndSaveChunks(content, sourceId, metadata)
       console.log('Chunk processing result:', result)
-      
       return NextResponse.json({
-        success: true,
-        message: 'Файл успешно обработан',
+        success: result.savedChunks > 0,
+        message: result.savedChunks > 0 ? 'Файл успешно обработан' : 'Ошибка при сохранении чанков',
         chunksCount: result.savedChunks,
-        totalChunks: result.totalChunks
+        totalChunks: result.totalChunks,
+        errors: result.errors
       })
 
     } else if (contentType.includes('application/json')) {

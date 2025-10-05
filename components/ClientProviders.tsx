@@ -17,7 +17,6 @@ export default function ClientProviders({ children }: { children: React.ReactNod
                 </a>
               </div>
               <div className="flex gap-2 sm:gap-4 items-center">
-                <a href="/upload" className="px-3 py-1 rounded text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-blue-900/30 hover:text-blue-700 dark:hover:text-blue-300 font-medium transition">Загрузка</a>
                 <a href="/database" className="px-3 py-1 rounded text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-blue-900/30 hover:text-blue-700 dark:hover:text-blue-300 font-medium transition">База данных</a>
                 <ThemeToggle />
               </div>
