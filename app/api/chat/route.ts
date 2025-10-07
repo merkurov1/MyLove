@@ -38,10 +38,14 @@ export async function POST(req: NextRequest) {
     // 1. Получить embedding для запроса через выбранного провайдера
     const embeddingStart = Date.now()
     // Определяем провайдера: из тела запроса, ENV или по умолчанию
+    // Поддержка всех embedding-провайдеров
+    const ALL_PROVIDERS: EmbeddingProvider[] = [
+      'voyage', 'huggingface', 'fireworks', 'openai', 'cohere', 'mixedbread', 'groq', 'gemini'
+    ];
     let provider: EmbeddingProvider = 'voyage';
-    if (embeddingProvider && ['voyage','huggingface','fireworks','openai','cohere'].includes(embeddingProvider)) {
+    if (embeddingProvider && ALL_PROVIDERS.includes(embeddingProvider)) {
       provider = embeddingProvider;
-    } else if (process.env.EMBEDDING_PROVIDER && ['voyage','huggingface','fireworks','openai','cohere'].includes(process.env.EMBEDDING_PROVIDER)) {
+    } else if (process.env.EMBEDDING_PROVIDER && ALL_PROVIDERS.includes(process.env.EMBEDDING_PROVIDER as EmbeddingProvider)) {
       provider = process.env.EMBEDDING_PROVIDER as EmbeddingProvider;
     }
     let queryEmbedding: number[] = [];

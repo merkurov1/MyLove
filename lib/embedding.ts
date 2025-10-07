@@ -7,13 +7,26 @@ const FIREWORKS_API_KEY = process.env.FIREWORKS_API_KEY;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const COHERE_API_KEY = process.env.COHERE_API_KEY;
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
 
 
-export type EmbeddingProvider = 'voyage' | 'huggingface' | 'fireworks' | 'openai' | 'cohere' | 'mixedbread' | 'groq';
+export type EmbeddingProvider = 'voyage' | 'huggingface' | 'fireworks' | 'openai' | 'cohere' | 'mixedbread' | 'groq' | 'gemini';
 
 export async function getEmbedding(text: string, provider: EmbeddingProvider = 'voyage'): Promise<number[]> {
   switch (provider) {
+  // ...existing cases...
+    case 'gemini': {
+      if (!GEMINI_API_KEY) throw new Error('GEMINI_API_KEY is not set');
+      // Google Gemini API: https://ai.google.dev/api/rest/v1beta/embedding
+      const response = await axios.post(
+        `https://generativelanguage.googleapis.com/v1beta/models/embedding-001:embedText?key=${GEMINI_API_KEY}`,
+        { text: text },
+        { headers: { 'Content-Type': 'application/json' } }
+      );
+      if (!response.data?.embedding?.values) throw new Error('No embedding returned from Gemini');
+      return response.data.embedding.values;
+    }
     case 'groq': {
       if (!GROQ_API_KEY) throw new Error('GROQ_API_KEY is not set');
       // Пример: https://console.groq.com/docs/api-reference/embeddings

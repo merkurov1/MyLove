@@ -22,6 +22,7 @@ export default function ChatAssistant() {
     { id: "cohere", name: "Cohere (embed-english-v3.0, лимит)" },
     { id: "mixedbread", name: "Mixedbread (mxbai-embed-large-v1, бесплатно/лимит)" },
     { id: "groq", name: "Groq (ada-002, быстро, лимит)" },
+    { id: "gemini", name: "Google Gemini (embedding-001, лимит)" },
   ];
 
   useEffect(() => {
@@ -56,18 +57,18 @@ export default function ChatAssistant() {
         timestamp: new Date().toISOString(),
       }));
 
-      if (!res.ok) {
-        setChatHistory((prev) => [
-          ...prev,
-          { role: "assistant", content: "Ошибка получения ответа от ассистента." },
-        ]);
-        return;
+      let reply = "Нет ответа.";
+      let error = null;
+      try {
+        const data = await res.json();
+        if (data.reply) reply = data.reply;
+        if (data.error) error = data.error;
+      } catch (e) {
+        error = "Ошибка парсинга ответа.";
       }
-
-      const data = await res.json();
       setChatHistory((prev) => [
         ...prev,
-        { role: "assistant", content: data.reply || "Нет ответа." },
+        { role: "assistant", content: error ? `Ошибка: ${error}` : reply },
       ]);
     } catch (err) {
       setChatHistory((prev) => [
