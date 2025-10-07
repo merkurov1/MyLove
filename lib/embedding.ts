@@ -73,10 +73,20 @@ export async function getEmbedding(text: string, provider: EmbeddingProvider = '
       const response = await axios.post(
         'https://api-inference.huggingface.co/models/sentence-transformers/all-MiniLM-L6-v2',
         { inputs: text },
-        { headers: { Authorization: `Bearer ${HF_API_KEY}` } }
+        {
+          headers: {
+            Authorization: `Bearer ${HF_API_KEY}`,
+            Accept: 'application/json',
+          },
+        }
       );
-      if (!Array.isArray(response.data) || !Array.isArray(response.data[0])) throw new Error('No embedding returned from Hugging Face');
-      return response.data[0];
+      // Hugging Face может вернуть массив массивов (batch), либо массив (single)
+      if (Array.isArray(response.data)) {
+        if (Array.isArray(response.data[0])) return response.data[0];
+        return response.data;
+      }
+      if (response.data?.embedding) return response.data.embedding;
+      throw new Error('No embedding returned from Hugging Face');
     }
     case 'fireworks': {
       if (!FIREWORKS_API_KEY) throw new Error('FIREWORKS_API_KEY is not set');
