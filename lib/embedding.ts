@@ -18,14 +18,22 @@ export async function getEmbedding(text: string, provider: EmbeddingProvider = '
   // ...existing cases...
     case 'gemini': {
       if (!GEMINI_API_KEY) throw new Error('GEMINI_API_KEY is not set');
-      // Google Gemini API: https://ai.google.dev/api/rest/v1beta/embedding
-      const response = await axios.post(
-        `https://generativelanguage.googleapis.com/v1beta/models/embedding-001:embedText?key=${GEMINI_API_KEY}`,
-        { text: text },
-        { headers: { 'Content-Type': 'application/json' } }
-      );
-      if (!response.data?.embedding?.values) throw new Error('No embedding returned from Gemini');
-      return response.data.embedding.values;
+      // Google Gemini API: https://ai.google.dev/api/rest/v1/models/embedding-001/embedText
+      try {
+        const response = await axios.post(
+          `https://generativelanguage.googleapis.com/v1/models/embedding-001:embedText?key=${GEMINI_API_KEY}`,
+          { text: text },
+          { headers: { 'Content-Type': 'application/json' } }
+        );
+        if (!response.data?.embedding?.values) throw new Error('No embedding returned from Gemini');
+        return response.data.embedding.values;
+      } catch (err: any) {
+        // Логируем тело ошибки для диагностики
+        if (err.response) {
+          console.error('[GEMINI EMBEDDING ERROR BODY]', err.response.data);
+        }
+        throw err;
+      }
     }
     case 'groq': {
       if (!GROQ_API_KEY) throw new Error('GROQ_API_KEY is not set');
