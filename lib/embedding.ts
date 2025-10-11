@@ -1,3 +1,4 @@
+const MISTRAL_API_KEY = process.env.MISTRAL_API_KEY;
 // lib/embedding.ts
 import axios from 'axios';
 
@@ -11,7 +12,7 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
 
 
-export type EmbeddingProvider = 'voyage' | 'huggingface' | 'fireworks' | 'openai' | 'cohere' | 'mixedbread' | 'groq' | 'gemini';
+export type EmbeddingProvider = 'voyage' | 'huggingface' | 'fireworks' | 'openai' | 'cohere' | 'mixedbread' | 'groq' | 'gemini' | 'mistral';
 
 export async function getEmbedding(text: string, provider: EmbeddingProvider = 'voyage'): Promise<number[]> {
   switch (provider) {
