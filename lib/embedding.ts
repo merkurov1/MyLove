@@ -9,8 +9,8 @@ export async function getEmbedding(text: string): Promise<number[]> {
   if (!HF_API_KEY) throw new Error('HF_API_KEY is not set');
   try {
     const response = await axios.post(
-      'https://api-inference.huggingface.co/models/sentence-transformers/all-MiniLM-L6-v2',
-  { inputs: [text] },
+      'https://api-inference.huggingface.co/models/sentence-transformers/paraphrase-MiniLM-L6-v2',
+      { inputs: [text] },
       {
         headers: {
           Authorization: `Bearer ${HF_API_KEY}`,
