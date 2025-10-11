@@ -14,14 +14,14 @@ export async function getEmbedding(text: string): Promise<number[]> {
 
   const cleanedText = text.replace(/\s+/g, ' ').trim();
   
-  // ✅ Используем модель для feature-extraction (эмбеддинги)
-  const apiUrl = 'https://api-inference.huggingface.co/pipeline/feature-extraction/sentence-transformers/all-MiniLM-L6-v2';
+  // ✅ ПРАВИЛЬНЫЙ URL - без /pipeline/
+  const apiUrl = 'https://api-inference.huggingface.co/models/sentence-transformers/all-MiniLM-L6-v2';
 
   try {
     const response = await axios.post(
       apiUrl,
       {
-        inputs: cleanedText,  // Одна строка, не массив
+        inputs: cleanedText,  // ✅ Просто строка, не массив
         options: { wait_for_model: true }
       },
       {
@@ -32,11 +32,20 @@ export async function getEmbedding(text: string): Promise<number[]> {
       }
     );
 
-    // Ответ может быть массивом массивов, берем первый элемент
+    // Ответ обычно приходит как массив чисел или массив массивов
+    let embedding: number[];
+    
     if (Array.isArray(response.data)) {
-      const embedding = Array.isArray(response.data[0]) ? response.data[0] : response.data;
+      // Если это массив массивов (например, [[0.1, 0.2, ...]]), берем первый
+      if (Array.isArray(response.data[0])) {
+        embedding = response.data[0];
+      } else {
+        // Если это просто массив чисел [0.1, 0.2, ...]
+        embedding = response.data;
+      }
       
-      if (Array.isArray(embedding) && embedding.length > 0) {
+      if (embedding.length > 0) {
+        console.log(`[HF EMBEDDING SUCCESS] Got ${embedding.length} dimensions`);
         return embedding;
       }
     }
@@ -48,8 +57,11 @@ export async function getEmbedding(text: string): Promise<number[]> {
     if (err.response) {
       console.error('[HF EMBEDDING ERROR]', {
         status: err.response.status,
-        data: err.response.data
+        data: err.response.data,
+        url: apiUrl
       });
+    } else {
+      console.error('[HF EMBEDDING ERROR]', err.message);
     }
     throw new Error(`Hugging Face embedding failed: ${err.message}`);
   }
