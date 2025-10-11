@@ -73,6 +73,7 @@ export async function POST(req: NextRequest) {
     // 3. Сформировать промпт и получить ответ от LLM
     const finalPrompt = `[INST] Ты — экспертный ассистент. Используй только следующий контекст для ответа. Отвечай кратко и по делу. Если в контексте нет информации для ответа, скажи: "Я не нашел информации по вашему вопросу в своей базе знаний".\n\nКонтекст:\n${contextText}\n---\nВопрос: ${query} [/INST]`;
 
+    // fetch to Hugging Face LLM API
     const response = await fetch(
       'https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.2',
       {
@@ -85,7 +86,15 @@ export async function POST(req: NextRequest) {
       }
     );
 
-    const result = await response.json();
+    const raw = await response.text();
+    let result;
+    try {
+      result = JSON.parse(raw);
+    } catch {
+      // Not JSON (e.g. "Not Found"), return error with raw text
+      console.error('[HF GENERATION NON-JSON]', { raw });
+      return NextResponse.json({ error: 'HF API вернул не-JSON: ' + raw }, { status: 500 });
+    }
 
     if (!response.ok || !Array.isArray(result) || !result[0]?.generated_text) {
       console.error('[HF GENERATION BAD RESULT]', { raw: result });
