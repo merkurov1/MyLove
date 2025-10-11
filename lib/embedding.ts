@@ -10,7 +10,7 @@ export async function getEmbedding(text: string): Promise<number[]> {
   try {
     const response = await axios.post(
       'https://api-inference.huggingface.co/models/sentence-transformers/all-MiniLM-L6-v2',
-      { inputs: [text] },
+      { sentences: [text] },
       {
         headers: {
           Authorization: `Bearer ${HF_API_KEY}`,
