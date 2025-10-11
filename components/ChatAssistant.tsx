@@ -1,6 +1,10 @@
 "use client";
+
+
 import { useState, useRef, useEffect } from "react";
 import { FaUser, FaRobot, FaPaperPlane } from "react-icons/fa6";
+
+type EmbeddingBackend = 'huggingface' | 'transformers' | 'mock';
 
 interface Message {
   role: "user" | "assistant";
@@ -13,6 +17,7 @@ export default function ChatAssistant() {
   const [isLoading, setIsLoading] = useState(false);
   const [debugInfo, setDebugInfo] = useState<any>(null);
   const [embeddingModel, setEmbeddingModel] = useState("intfloat/multilingual-e5-small");
+  const [embeddingBackend, setEmbeddingBackend] = useState<EmbeddingBackend>('huggingface');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const embeddingModels = [
     { id: "intfloat/multilingual-e5-small", name: "E5-small (384d, multilingual)" },
@@ -24,6 +29,12 @@ export default function ChatAssistant() {
     { id: "sentence-transformers/multi-qa-MiniLM-L6-cos-v1", name: "multi-qa-MiniLM-L6-cos-v1 (384d, Q&A, recommended)" },
     { id: "mock", name: "Mock (тестовый режим)" },
   ];
+  const embeddingBackends = [
+    { id: 'huggingface', name: 'Hugging Face API (удалённо)' },
+    { id: 'transformers', name: 'Transformers.js (локально)' },
+    { id: 'mock', name: 'Mock (тест)' },
+  ];
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chatHistory, isLoading]);
@@ -37,13 +48,18 @@ export default function ChatAssistant() {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: userInput, embeddingModel }),
+        body: JSON.stringify({
+          query: userInput,
+          embeddingModel,
+          embeddingBackend,
+        }),
       });
       setDebugInfo({
         status: res.status,
         statusText: res.statusText,
         headers: Object.fromEntries(res.headers.entries()),
         model: embeddingModel,
+        backend: embeddingBackend,
         query: userInput,
         time: new Date().toISOString(),
       });
@@ -64,6 +80,7 @@ export default function ChatAssistant() {
       setDebugInfo({
         error: err instanceof Error ? err.message : String(err),
         model: embeddingModel,
+        backend: embeddingBackend,
         query: userInput,
         time: new Date().toISOString(),
       });
@@ -74,7 +91,7 @@ export default function ChatAssistant() {
     } finally {
       setIsLoading(false);
       setUserInput("");
-  }
+    }
   };
 
   return (
@@ -85,16 +102,28 @@ export default function ChatAssistant() {
             <FaRobot className="text-blue-500 text-2xl" />
             <span className="font-bold text-lg text-gray-800 dark:text-gray-100">AI-ассистент</span>
           </div>
-          <select
-            id="embedding-model-select"
-            value={embeddingModel}
-            onChange={(e) => setEmbeddingModel(e.target.value)}
-            className="border border-gray-300 dark:border-gray-700 rounded-lg px-3 py-1 text-xs bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow focus:outline-none focus:ring-2 focus:ring-blue-400 transition"
-          >
-            {embeddingModels.map((prov) => (
-              <option key={prov.id} value={prov.id}>{prov.name}</option>
-            ))}
-          </select>
+          <div className="flex items-center gap-2">
+            <select
+              id="embedding-backend-select"
+              value={embeddingBackend}
+              onChange={(e) => setEmbeddingBackend(e.target.value as EmbeddingBackend)}
+              className="border border-gray-300 dark:border-gray-700 rounded-lg px-3 py-1 text-xs bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow focus:outline-none focus:ring-2 focus:ring-blue-400 transition"
+            >
+              {embeddingBackends.map((b) => (
+                <option key={b.id} value={b.id}>{b.name}</option>
+              ))}
+            </select>
+            <select
+              id="embedding-model-select"
+              value={embeddingModel}
+              onChange={(e) => setEmbeddingModel(e.target.value)}
+              className="border border-gray-300 dark:border-gray-700 rounded-lg px-3 py-1 text-xs bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow focus:outline-none focus:ring-2 focus:ring-blue-400 transition"
+            >
+              {embeddingModels.map((prov) => (
+                <option key={prov.id} value={prov.id}>{prov.name}</option>
+              ))}
+            </select>
+          </div>
         </div>
         <div className="flex-1 flex flex-col min-h-0 bg-gradient-to-b from-white/80 to-blue-50/60 dark:from-gray-900/80 dark:to-gray-950/60">
           <div className="flex-1 overflow-y-auto px-6 py-8 space-y-8 scrollbar-thin scrollbar-thumb-blue-200 dark:scrollbar-thumb-blue-900">

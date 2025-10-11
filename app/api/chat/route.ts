@@ -13,7 +13,7 @@ export async function POST(req: NextRequest) {
   console.log('[ENV CHECK] NEXT_PUBLIC_SUPABASE_ANON_KEY:', !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 
   try {
-  const { query, sourceId, embeddingModel } = await req.json();
+  const { query, sourceId, embeddingModel, embeddingBackend } = await req.json();
     console.log(`[${new Date().toISOString()}] Chat API called with:`, {
       query: query?.substring(0, 100),
       queryLength: query?.length
@@ -33,7 +33,10 @@ export async function POST(req: NextRequest) {
     console.log(`[${new Date().toISOString()}] Starting embedding request...`);
     let queryEmbedding: number[];
     try {
-      queryEmbedding = await getEmbedding(query, embeddingModel);
+      queryEmbedding = await getEmbedding(query, {
+        backend: embeddingBackend,
+        model: embeddingModel,
+      });
     } catch (embedErr: any) {
       console.error('[EMBEDDING ERROR]', {
         error: embedErr?.message,
