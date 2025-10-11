@@ -2,8 +2,8 @@ import axios from 'axios';
 
 const USE_MOCK_EMBEDDINGS = process.env.USE_MOCK_EMBEDDINGS === 'true';
 
-export async function getEmbedding(text: string): Promise<number[]> {
-  if (USE_MOCK_EMBEDDINGS) {
+export async function getEmbedding(text: string, model: string = "intfloat/multilingual-e5-small"): Promise<number[]> {
+  if (model === "mock" || USE_MOCK_EMBEDDINGS) {
     return Array.from({ length: 384 }, () => Math.random() * 2 - 1);
   }
 
@@ -13,15 +13,13 @@ export async function getEmbedding(text: string): Promise<number[]> {
   }
 
   const cleanedText = text.replace(/\s+/g, ' ').trim();
-  
-  // ✅ ПРАВИЛЬНЫЙ URL - без /pipeline/
-  const apiUrl = 'https://api-inference.huggingface.co/models/sentence-transformers/all-MiniLM-L6-v2';
+  const apiUrl = `https://api-inference.huggingface.co/models/${model}`;
 
   try {
     const response = await axios.post(
       apiUrl,
       {
-        inputs: cleanedText,  // ✅ Просто строка, не массив
+        inputs: [cleanedText],
         options: { wait_for_model: true }
       },
       {
