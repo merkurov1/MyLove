@@ -16,16 +16,13 @@ export default function ChatAssistant() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const embeddingProviders = [
-    { id: "voyage", name: "Voyage AI (voyage-2, 768d, платно/лимит)" },
     { id: "huggingface", name: "Hugging Face (all-MiniLM-L6-v2, бесплатно)" },
-    { id: "fireworks", name: "Fireworks (nomic-embed, лимит)" },
-    { id: "openai", name: "OpenAI (ada-002, лимит)" },
-    { id: "cohere", name: "Cohere (embed-english-v3.0, лимит)" },
-    { id: "mixedbread", name: "Mixedbread (mxbai-embed-large-v1, бесплатно/лимит)" },
-    { id: "groq", name: "Groq (ada-002, быстро, лимит)" },
-    { id: "gemini", name: "Google Gemini (embedding-001, лимит)" },
-    { id: "mistral", name: "Mistral (mistral-embed, быстро, лимит)" },
+    { id: "mock", name: "Mock (тестовый режим)" },
   ];
+  // По умолчанию Hugging Face
+  useEffect(() => {
+    setEmbeddingProvider("huggingface");
+  }, []);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -83,7 +80,7 @@ export default function ChatAssistant() {
   };
 
   return (
-    <div className="backdrop-blur-lg bg-white/70 dark:bg-gray-900/70 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-800 max-w-2xl mx-auto overflow-hidden flex flex-col h-[80vh]">
+  <div className="backdrop-blur-lg bg-white/70 dark:bg-gray-900/70 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-800 max-w-full md:max-w-2xl mx-auto overflow-hidden flex flex-col h-[70vh] md:h-[80vh]">
       <div className="p-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-end gap-2">
         <label htmlFor="embedding-provider-select" className="text-xs font-medium text-gray-700 dark:text-gray-300">Embedding:</label>
         <select
