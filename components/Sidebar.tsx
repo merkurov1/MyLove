@@ -8,15 +8,13 @@ export default function Sidebar() {
       <div className="p-6 text-2xl font-bold tracking-tight border-b border-gray-800">
         MyLove RAG
       </div>
-      <nav className="flex-1 p-4 space-y-2">
-        <Link href="/" className="block px-3 py-2 rounded hover:bg-gray-800 transition">Чат</Link>
-        <Link href="/documents" className="block px-3 py-2 rounded hover:bg-gray-800 transition">Документы</Link>
-        <Link href="/upload" className="block px-3 py-2 rounded hover:bg-gray-800 transition">Загрузка</Link>
-        <Link href="/database" className="block px-3 py-2 rounded hover:bg-gray-800 transition">База данных</Link>
-      </nav>
-      <div className="p-4 border-t border-gray-800">
+      <div className="p-4 border-b border-gray-800">
         <StatsPanel />
       </div>
+      <nav className="flex-1 p-4 space-y-2">
+        <Link href="/" className="block px-3 py-2 rounded hover:bg-gray-800 transition">Чат</Link>
+        <Link href="/database" className="block px-3 py-2 rounded hover:bg-gray-800 transition">База данных</Link>
+      </nav>
     </aside>
   );
 }

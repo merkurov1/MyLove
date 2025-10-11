@@ -1,6 +1,6 @@
 
 import { NextRequest, NextResponse } from 'next/server'
-import { getEmbedding, EmbeddingProvider } from '@/lib/embedding'
+import { getEmbedding } from '@/lib/embedding'
 
 export async function POST(req: NextRequest) {
   const startTime = Date.now()
@@ -37,27 +37,17 @@ export async function POST(req: NextRequest) {
 
     // 1. Получить embedding для запроса через выбранного провайдера
     const embeddingStart = Date.now()
-    // Определяем провайдера: из тела запроса, ENV или по умолчанию
-    // Поддержка всех embedding-провайдеров
-    const ALL_PROVIDERS: EmbeddingProvider[] = [
-      'voyage', 'huggingface', 'fireworks', 'openai', 'cohere', 'mixedbread', 'groq', 'gemini'
-    ];
-    let provider: EmbeddingProvider = 'voyage';
-    if (embeddingProvider && ALL_PROVIDERS.includes(embeddingProvider)) {
-      provider = embeddingProvider;
-    } else if (process.env.EMBEDDING_PROVIDER && ALL_PROVIDERS.includes(process.env.EMBEDDING_PROVIDER as EmbeddingProvider)) {
-      provider = process.env.EMBEDDING_PROVIDER as EmbeddingProvider;
-    }
+    // Используем только Hugging Face или mock embeddings
     let queryEmbedding: number[] = [];
     try {
-      queryEmbedding = await getEmbedding(query, provider)
+      queryEmbedding = await getEmbedding(query)
     } catch (embedErr: any) {
       // Логируем ошибку embedding в консоль Vercel
       console.error('[EMBEDDING ERROR]', {
         error: embedErr?.message,
         stack: embedErr?.stack,
-        provider,
         env: {
+          // provider removed
           VOYAGE_API_KEY: !!process.env.VOYAGE_API_KEY,
           HF_API_KEY: !!process.env.HF_API_KEY,
           FIREWORKS_API_KEY: !!process.env.FIREWORKS_API_KEY,
@@ -71,8 +61,8 @@ export async function POST(req: NextRequest) {
         error: 'Ошибка embedding',
         message: embedErr?.message,
         stack: embedErr?.stack,
-        provider,
         env: {
+          // provider removed
           VOYAGE_API_KEY: !!process.env.VOYAGE_API_KEY,
           HF_API_KEY: !!process.env.HF_API_KEY,
           FIREWORKS_API_KEY: !!process.env.FIREWORKS_API_KEY,
@@ -82,6 +72,22 @@ export async function POST(req: NextRequest) {
           MIXEDBREAD_API_KEY: !!process.env.MIXEDBREAD_API_KEY,
         }
       }, { status: 500 })
+        return NextResponse.json({
+          error: 'Ошибка embedding',
+          message: embedErr?.message,
+          stack: embedErr?.stack,
+          debug: embedErr,
+          env: {
+            // provider removed
+            VOYAGE_API_KEY: !!process.env.VOYAGE_API_KEY,
+            HF_API_KEY: !!process.env.HF_API_KEY,
+            FIREWORKS_API_KEY: !!process.env.FIREWORKS_API_KEY,
+            OPENAI_API_KEY: !!process.env.OPENAI_API_KEY,
+            COHERE_API_KEY: !!process.env.COHERE_API_KEY,
+            GROQ_API_KEY: !!process.env.GROQ_API_KEY,
+            MIXEDBREAD_API_KEY: !!process.env.MIXEDBREAD_API_KEY,
+          }
+        }, { status: 500 })
     }
 
     // 2. Найти релевантные документы через Supabase функцию (через API)

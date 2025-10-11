@@ -84,26 +84,18 @@ export default function ChatAssistant() {
 
   return (
     <div className="backdrop-blur-lg bg-white/70 dark:bg-gray-900/70 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-800 max-w-2xl mx-auto overflow-hidden flex flex-col h-[80vh]">
-      <div className="p-6 border-b border-gray-200 dark:border-gray-800 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h2 className="text-3xl font-bold text-gray-900 dark:text-white tracking-tight flex items-center gap-2">
-            <FaRobot className="text-blue-500" /> Чат с AI-ассистентом
-          </h2>
-          <p className="text-gray-600 dark:text-gray-300 mt-1 text-sm">Задавайте вопросы по загруженным данным</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <label htmlFor="embedding-provider-select" className="text-xs font-medium text-gray-700 dark:text-gray-300">Embedding:</label>
-          <select
-            id="embedding-provider-select"
-            value={embeddingProvider}
-            onChange={(e) => setEmbeddingProvider(e.target.value)}
-            className="border border-gray-300 dark:border-gray-700 rounded-lg px-3 py-1 text-xs bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow focus:outline-none focus:ring-2 focus:ring-blue-400 transition"
-          >
-            {embeddingProviders.map((prov) => (
-              <option key={prov.id} value={prov.id}>{prov.name}</option>
-            ))}
-          </select>
-        </div>
+      <div className="p-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-end gap-2">
+        <label htmlFor="embedding-provider-select" className="text-xs font-medium text-gray-700 dark:text-gray-300">Embedding:</label>
+        <select
+          id="embedding-provider-select"
+          value={embeddingProvider}
+          onChange={(e) => setEmbeddingProvider(e.target.value)}
+          className="border border-gray-300 dark:border-gray-700 rounded-lg px-3 py-1 text-xs bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 shadow focus:outline-none focus:ring-2 focus:ring-blue-400 transition"
+        >
+          {embeddingProviders.map((prov) => (
+            <option key={prov.id} value={prov.id}>{prov.name}</option>
+          ))}
+        </select>
       </div>
       <div className="flex-1 flex flex-col min-h-0">
         <div className="flex-1 overflow-y-auto px-4 py-6 space-y-6 scrollbar-thin scrollbar-thumb-blue-200 dark:scrollbar-thumb-blue-900">
