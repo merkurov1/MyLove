@@ -14,15 +14,16 @@ export async function getEmbedding(text: string): Promise<number[]> {
 
   const cleanedText = text.replace(/\s+/g, ' ').trim();
   
-  // Используем ваш оригинальный, правильный URL
-  const apiUrl = 'https://api-inference.huggingface.co/models/sentence-transformers/all-MiniLM-L6-v2';
+  // Используем ваш оригинальный URL
+  const apiUrl = 'https://api-inference.huggingface.co/models/sentence-transformers/paraphrase-MiniLM-L6-v2';
 
   try {
     const response = await axios.post(
       apiUrl,
-      // ✅ ИСПРАВЛЕНИЕ: Используем ключ 'sentences', как того требует лог ошибки.
+      // ✅ ФИНАЛЬНОЕ ИСПРАВЛЕНИЕ:
+      // Возвращаем ключ 'inputs', как того требует последняя ошибка.
       {
-        sentences: [cleanedText],
+        inputs: [cleanedText],
         options: { wait_for_model: true }
       },
       {
@@ -32,8 +33,7 @@ export async function getEmbedding(text: string): Promise<number[]> {
       }
     );
 
-    // Этот API возвращает массив векторов, даже если отправлена одна строка.
-    // Нам нужен первый элемент.
+    // Обработка успешного ответа
     if (Array.isArray(response.data) && Array.isArray(response.data[0])) {
       return response.data[0];
     }

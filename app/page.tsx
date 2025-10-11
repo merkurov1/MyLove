@@ -8,11 +8,9 @@ export default async function Page() {
     .order('created_at', { ascending: false })
 
   return (
-    <div className="py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-4xl mx-auto">
-        <div className="max-w-4xl mx-auto">
-          <ChatAssistant />
-        </div>
+    <div className="w-full flex flex-col items-center">
+      <div className="w-full max-w-3xl md:max-w-4xl lg:max-w-5xl">
+        <ChatAssistant />
       </div>
     </div>
   )
