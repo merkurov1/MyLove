@@ -80,7 +80,7 @@ export default function ChatAssistant() {
   };
 
   return (
-  <div className="backdrop-blur-lg bg-white/70 dark:bg-gray-900/70 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-800 max-w-full md:max-w-2xl mx-auto overflow-hidden flex flex-col h-[70vh] md:h-[80vh]">
+  <div className="backdrop-blur-lg bg-white/70 dark:bg-gray-900/70 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-800 max-w-full md:max-w-2xl mx-auto mt-2 overflow-hidden flex flex-col h-[55vh] md:h-[65vh]">
       <div className="p-4 border-b border-gray-200 dark:border-gray-800 flex items-center justify-end gap-2">
         <label htmlFor="embedding-provider-select" className="text-xs font-medium text-gray-700 dark:text-gray-300">Embedding:</label>
         <select
