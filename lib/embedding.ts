@@ -14,16 +14,15 @@ export async function getEmbedding(text: string): Promise<number[]> {
 
   const cleanedText = text.replace(/\s+/g, ' ').trim();
   
-  // ✅ ИСПРАВЛЕНИЕ: Возвращаем оригинальный URL, так как он был верным.
-  // Ошибка 404 была из-за моего предыдущего неверного URL.
+  // Используем ваш оригинальный, правильный URL
   const apiUrl = 'https://api-inference.huggingface.co/models/sentence-transformers/all-MiniLM-L6-v2';
 
   try {
     const response = await axios.post(
       apiUrl,
-      // Тело запроса оставляем исправленным, так как оно соответствует требованиям API.
+      // ✅ ИСПРАВЛЕНИЕ: Используем ключ 'sentences', как того требует лог ошибки.
       {
-        inputs: [cleanedText], // Для этого эндпоинта ключ 'inputs' является правильным.
+        sentences: [cleanedText],
         options: { wait_for_model: true }
       },
       {
@@ -33,13 +32,10 @@ export async function getEmbedding(text: string): Promise<number[]> {
       }
     );
 
-    if (Array.isArray(response.data) && Array.isArray(response.data[0]) && typeof response.data[0][0] === 'number') {
+    // Этот API возвращает массив векторов, даже если отправлена одна строка.
+    // Нам нужен первый элемент.
+    if (Array.isArray(response.data) && Array.isArray(response.data[0])) {
       return response.data[0];
-    }
-    
-    // Некоторые модели возвращают вектор напрямую
-    if (Array.isArray(response.data) && typeof response.data[0] === 'number') {
-        return response.data;
     }
 
     console.error('[HF EMBEDDING UNEXPECTED FORMAT]', response.data);
