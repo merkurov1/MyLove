@@ -57,8 +57,8 @@ export default function ChatAssistant() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-blue-50 via-white to-blue-100 dark:from-gray-900 dark:via-gray-950 dark:to-gray-900 py-6 px-2">
-      <div className="w-full max-w-lg md:max-w-xl rounded-3xl shadow-2xl border border-gray-200 dark:border-gray-800 bg-white/90 dark:bg-gray-900/90 flex flex-col overflow-hidden">
+    <div className="w-full flex flex-col items-center bg-gradient-to-br from-blue-50 via-white to-blue-100 dark:from-gray-900 dark:via-gray-950 dark:to-gray-900 py-4 px-2">
+      <div className="w-full max-w-4xl md:max-w-5xl xl:max-w-6xl rounded-3xl shadow-2xl border border-gray-200 dark:border-gray-800 bg-white/90 dark:bg-gray-900/90 flex flex-col overflow-hidden">
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-800 bg-gradient-to-r from-blue-100/60 to-white/0 dark:from-gray-800/60">
           <div className="flex items-center gap-3">
             <FaRobot className="text-blue-500 text-2xl" />

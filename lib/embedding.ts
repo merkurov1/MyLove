@@ -14,28 +14,31 @@ export async function getEmbedding(text: string): Promise<number[]> {
 
   const cleanedText = text.replace(/\s+/g, ' ').trim();
   
-  // Используем ваш оригинальный URL
-  const apiUrl = 'https://api-inference.huggingface.co/models/sentence-transformers/paraphrase-MiniLM-L6-v2';
+  // ✅ Используем модель для feature-extraction (эмбеддинги)
+  const apiUrl = 'https://api-inference.huggingface.co/pipeline/feature-extraction/sentence-transformers/all-MiniLM-L6-v2';
 
   try {
     const response = await axios.post(
       apiUrl,
-      // ✅ ФИНАЛЬНОЕ ИСПРАВЛЕНИЕ:
-      // Возвращаем ключ 'inputs', как того требует последняя ошибка.
       {
-        inputs: [cleanedText],
+        inputs: cleanedText,  // Одна строка, не массив
         options: { wait_for_model: true }
       },
       {
         headers: {
-          Authorization: `Bearer ${HF_API_KEY}`
+          Authorization: `Bearer ${HF_API_KEY}`,
+          'Content-Type': 'application/json'
         }
       }
     );
 
-    // Обработка успешного ответа
-    if (Array.isArray(response.data) && Array.isArray(response.data[0])) {
-      return response.data[0];
+    // Ответ может быть массивом массивов, берем первый элемент
+    if (Array.isArray(response.data)) {
+      const embedding = Array.isArray(response.data[0]) ? response.data[0] : response.data;
+      
+      if (Array.isArray(embedding) && embedding.length > 0) {
+        return embedding;
+      }
     }
 
     console.error('[HF EMBEDDING UNEXPECTED FORMAT]', response.data);
@@ -43,7 +46,10 @@ export async function getEmbedding(text: string): Promise<number[]> {
 
   } catch (err: any) {
     if (err.response) {
-      console.error('[HF EMBEDDING ERROR BODY]', err.response.data);
+      console.error('[HF EMBEDDING ERROR]', {
+        status: err.response.status,
+        data: err.response.data
+      });
     }
     throw new Error(`Hugging Face embedding failed: ${err.message}`);
   }
