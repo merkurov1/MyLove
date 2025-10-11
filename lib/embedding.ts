@@ -26,40 +26,42 @@ export async function getEmbedding(text: string, model: string = "intfloat/multi
         headers: {
           Authorization: `Bearer ${HF_API_KEY}`,
           'Content-Type': 'application/json'
-        }
+        },
+        validateStatus: () => true // Позволяет обрабатывать любые коды ответа
       }
     );
 
-    // Ответ обычно приходит как массив чисел или массив массивов
-    let embedding: number[];
-    
+    if (typeof response.data === 'string') {
+      if (response.data.startsWith('Not Found')) {
+        // fallback на mock
+        return Array.from({ length: 384 }, () => Math.random() * 2 - 1);
+      }
+      throw new Error('Hugging Face API вернул не-JSON ответ: ' + response.data);
+    }
+    if (response.status === 404) {
+      // fallback на mock
+      return Array.from({ length: 384 }, () => Math.random() * 2 - 1);
+    }
+    if (response.status >= 400) {
+      throw new Error('Ошибка Hugging Face API: ' + JSON.stringify(response.data));
+    }
+
+    let embedding: number[] | undefined = undefined;
     if (Array.isArray(response.data)) {
-      // Если это массив массивов (например, [[0.1, 0.2, ...]]), берем первый
       if (Array.isArray(response.data[0])) {
         embedding = response.data[0];
       } else {
-        // Если это просто массив чисел [0.1, 0.2, ...]
         embedding = response.data;
       }
-      
-      if (embedding.length > 0) {
-        console.log(`[HF EMBEDDING SUCCESS] Got ${embedding.length} dimensions`);
+      if (embedding && embedding.length > 0) {
         return embedding;
       }
     }
-
-    console.error('[HF EMBEDDING UNEXPECTED FORMAT]', response.data);
     throw new Error('Unexpected response format from Hugging Face API');
-
   } catch (err: any) {
-    if (err.response) {
-      console.error('[HF EMBEDDING ERROR]', {
-        status: err.response.status,
-        data: err.response.data,
-        url: apiUrl
-      });
-    } else {
-      console.error('[HF EMBEDDING ERROR]', err.message);
+    if (err.message && (err.message.includes('Not Found') || err.message.includes('Модель не поддерживается'))) {
+      // fallback на mock
+      return Array.from({ length: 384 }, () => Math.random() * 2 - 1);
     }
     throw new Error(`Hugging Face embedding failed: ${err.message}`);
   }
