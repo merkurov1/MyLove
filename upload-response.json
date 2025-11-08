@@ -1,0 +1,14 @@
+  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0100 58136  100   246  100 57890    235  55513  0:00:01  0:00:01 --:--:-- 55792100 58136  100   246  100 57890    235  55511  0:00:01  0:00:01 --:--:-- 55792
+{
+  "object": "file",
+  "id": "file-9zHrWXo84q1aB8ngKtUz6j",
+  "purpose": "fine-tune",
+  "filename": "finetuning-data.jsonl",
+  "bytes": 57554,
+  "created_at": 1762620572,
+  "expires_at": null,
+  "status": "processed",
+  "status_details": null
+}
