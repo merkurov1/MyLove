@@ -58,21 +58,38 @@ export async function POST(req: NextRequest) {
       process.env.SUPABASE_SERVICE_ROLE_KEY
     );
 
+    // Начинаем с 5 чанков, если similarity низкий - возьмем больше
+    let matchCount = 5;
     const { data: matches, error } = await supabase.rpc('match_documents', {
       query_embedding: queryEmbedding,
-      match_count: 5
+      match_count: matchCount
     });
 
     console.log(`[${new Date().toISOString()}] RPC match_documents called`);
+    const topSimilarity = matches?.[0]?.similarity || 0;
     console.log('[RPC RESULT]', { 
       matchesCount: matches?.length || 0, 
       error: error?.message,
+      topSimilarity,
       firstMatch: matches?.[0] ? { 
         id: matches[0].id, 
         similarity: matches[0].similarity,
         contentPreview: matches[0].content?.substring(0, 100) 
       } : null
     });
+    
+    // Fallback: если similarity < 0.35, загрузим больше чанков для лучшего контекста
+    if (topSimilarity < 0.35 && matches && matches.length > 0) {
+      console.log('[FALLBACK] Low similarity, expanding search to 12 chunks...');
+      const { data: expandedMatches } = await supabase.rpc('match_documents', {
+        query_embedding: queryEmbedding,
+        match_count: 12
+      });
+      if (expandedMatches) {
+        matches.length = 0;
+        matches.push(...expandedMatches);
+      }
+    }
 
     if (error) {
       console.error('[SUPABASE RPC ERROR]', { error: error.message, full: error });
@@ -148,7 +165,9 @@ export async function POST(req: NextRequest) {
         const { data: chunks } = await query;
         
         if (chunks && chunks.length > 0) {
-          contextText = chunks.map(c => c.content).join('\n\n');
+          // Добавляем метаданные о документе в начало
+          const docMetadata = `[ДОКУМЕНТ: "${latestDoc.title}", создан: ${latestDoc.created_at.substring(0, 10)}]\n\n`;
+          contextText = docMetadata + chunks.map(c => c.content).join('\n\n');
           console.log('[AGENT] Loaded document:', { 
             chunks: chunks.length,
             limited: !!chunkLimit,
@@ -161,8 +180,29 @@ export async function POST(req: NextRequest) {
       if (sourceId) {
         filteredMatches = filteredMatches.filter((doc: any) => doc.source_id === sourceId);
       }
-      // Увеличили лимит с 3000 до 6000 для лучших ответов на простые вопросы
-      contextText = filteredMatches.map((doc: any) => doc.content).join('\n---\n').substring(0, 6000);
+      
+      // Получаем названия документов для контекста (если есть document_id)
+      const chunksWithDocs = [];
+      for (const match of filteredMatches) {
+        if (match.document_id) {
+          const { data: doc } = await supabase
+            .from('documents')
+            .select('title, created_at')
+            .eq('id', match.document_id)
+            .single();
+          
+          if (doc) {
+            chunksWithDocs.push(`[Из: "${doc.title}"]\n${match.content}`);
+          } else {
+            chunksWithDocs.push(match.content);
+          }
+        } else {
+          chunksWithDocs.push(match.content);
+        }
+      }
+      
+      // Увеличили лимит с 3000 до 8000 для лучших ответов
+      contextText = chunksWithDocs.join('\n\n---\n\n').substring(0, 8000);
     }
     
     console.log('[CONTEXT]', { 
@@ -190,13 +230,13 @@ export async function POST(req: NextRequest) {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        model: 'gpt-3.5-turbo',
+        model: 'gpt-4o-mini', // Умнее чем 3.5, дешевле чем GPT-4
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: `Контекст:\n${contextText}\n\nВопрос: ${query}` }
         ],
         temperature: 0.7,
-        max_tokens: 500
+        max_tokens: 1000 // Увеличили для более полных ответов
       })
     });
 
