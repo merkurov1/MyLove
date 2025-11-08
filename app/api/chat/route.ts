@@ -82,8 +82,44 @@ export async function POST(req: NextRequest) {
     let contextText = '';
     let filteredMatches = matches || [];
     
-    // Специальная обработка для analyze/summarize latest document
-    if ((intent.action === 'analyze' || intent.action === 'summarize') && intent.target === 'latest') {
+    // Специальная обработка для analyze/summarize ALL documents
+    if ((intent.action === 'analyze' || intent.action === 'compare') && intent.target === 'all') {
+      console.log('[AGENT] Loading ALL documents for multi-document analysis...');
+      
+      // Получаем все документы
+      const { data: allDocs } = await supabase
+        .from('documents')
+        .select('id, title, created_at')
+        .order('created_at', { ascending: false })
+        .limit(10); // Ограничиваем 10 документами
+      
+      if (allDocs && allDocs.length > 0) {
+        console.log('[AGENT] Found documents:', allDocs.length);
+        
+        // Загружаем по 3 чанка от каждого документа (для обзора)
+        const allChunks = [];
+        for (const doc of allDocs) {
+          const { data: chunks } = await supabase
+            .from('document_chunks')
+            .select('content, chunk_index')
+            .eq('document_id', doc.id)
+            .order('chunk_index', { ascending: true })
+            .limit(3);
+          
+          if (chunks && chunks.length > 0) {
+            allChunks.push(`\n\n=== ${doc.title} (${doc.created_at.substring(0, 10)}) ===\n${chunks.map(c => c.content).join('\n')}`);
+          }
+        }
+        
+        contextText = allChunks.join('\n\n---\n');
+        console.log('[AGENT] Loaded multi-document context:', { 
+          documents: allDocs.length,
+          totalLength: contextText.length 
+        });
+      }
+    }
+    // Специальная обработка для analyze/summarize LATEST document
+    else if ((intent.action === 'analyze' || intent.action === 'summarize') && intent.target === 'latest') {
       console.log('[AGENT] Loading full latest document...');
       
       // Получаем последний документ
@@ -132,8 +168,11 @@ export async function POST(req: NextRequest) {
     }
 
     // Выбираем промпт в зависимости от намерения
-    const systemPrompt = AGENT_PROMPTS[intent.action];
-    console.log('[AGENT] Using system prompt for:', intent.action);
+    const promptKey = (intent.action === 'analyze' || intent.action === 'compare') && intent.target === 'all' 
+      ? 'multi_analyze' 
+      : intent.action;
+    const systemPrompt = AGENT_PROMPTS[promptKey as keyof typeof AGENT_PROMPTS];
+    console.log('[AGENT] Using system prompt for:', promptKey);
 
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
