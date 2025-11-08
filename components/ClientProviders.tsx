@@ -1,6 +1,7 @@
 "use client"
 import { ToastProvider } from './ToastContext'
 import ThemeToggle from './ThemeToggle'
+import LogoutButton from './LogoutButton'
 import PasswordProtection from './PasswordProtection'
 import ErrorBoundary from './ErrorBoundary'
 
@@ -20,6 +21,7 @@ export default function ClientProviders({ children }: { children: React.ReactNod
               </div>
               <div className="flex gap-2 sm:gap-4 items-center">
                 <ThemeToggle />
+                <LogoutButton />
               </div>
             </nav>
           </header>

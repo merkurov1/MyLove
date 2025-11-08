@@ -1,4 +1,3 @@
-import Link from 'next/link';
 import { FaBrain, FaSearch, FaFileAlt, FaDollarSign, FaArrowRight } from 'react-icons/fa';
 
 export default function PromoPage() {
@@ -40,13 +39,13 @@ export default function PromoPage() {
           </div>
 
           {/* CTA Button */}
-          <Link 
-            href="/"
+          <a 
+            href="mailto:merkurov@gmail.com?subject=Pierrot AI - Запрос доступа"
             className="inline-flex items-center gap-3 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-bold text-lg px-8 py-4 rounded-full shadow-2xl transition-all duration-300 transform hover:scale-105"
           >
-            Попробовать Pierrot AI
+            Запросить доступ
             <FaArrowRight />
-          </Link>
+          </a>
         </div>
       </div>
 
@@ -177,13 +176,13 @@ export default function PromoPage() {
         <h2 className="text-3xl md:text-4xl font-bold text-white mb-6">
           Pierrot AI: Раскройте истинный смысл и потенциал любого текста
         </h2>
-        <Link 
-          href="/"
+        <a 
+          href="mailto:merkurov@gmail.com?subject=Pierrot AI - Запрос доступа"
           className="inline-flex items-center gap-3 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-bold text-lg px-8 py-4 rounded-full shadow-2xl transition-all duration-300 transform hover:scale-105"
         >
-          Начать работу
+          Связаться с нами
           <FaArrowRight />
-        </Link>
+        </a>
       </div>
 
       {/* Footer */}
@@ -191,9 +190,9 @@ export default function PromoPage() {
         <div className="container mx-auto px-4 text-center text-purple-300">
           <p>Создано с ❤️ используя Next.js, OpenAI и Supabase</p>
           <p className="mt-2">
-            <Link href="https://merkurov.love" className="hover:text-purple-100 transition-colors">
+            <a href="https://merkurov.love" className="hover:text-purple-100 transition-colors" target="_blank" rel="noopener noreferrer">
               merkurov.love
-            </Link>
+            </a>
           </p>
         </div>
       </footer>

@@ -1,7 +1,21 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, createContext, useContext } from 'react'
 
 const PASSWORD = 'eMunwiL' // Измените на свой пароль
+
+interface AuthContextType {
+  logout: () => void
+}
+
+const AuthContext = createContext<AuthContextType | null>(null)
+
+export const useAuth = () => {
+  const context = useContext(AuthContext)
+  if (!context) {
+    throw new Error('useAuth must be used within PasswordProtection')
+  }
+  return context
+}
 
 export default function PasswordProtection({ children }: { children: React.ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
@@ -95,17 +109,8 @@ export default function PasswordProtection({ children }: { children: React.React
   }
 
   return (
-    <div>
-      <div className="bg-gray-800 text-white px-4 py-2 flex justify-between items-center">
-        <span className="text-sm">Админ-панель</span>
-        <button
-          onClick={handleLogout}
-          className="text-sm hover:text-gray-300 underline"
-        >
-          Выйти
-        </button>
-      </div>
+    <AuthContext.Provider value={{ logout: handleLogout }}>
       {children}
-    </div>
+    </AuthContext.Provider>
   )
 }
