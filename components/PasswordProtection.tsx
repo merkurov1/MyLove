@@ -10,9 +10,14 @@ export default function PasswordProtection({ children }: { children: React.React
 
   useEffect(() => {
     // Проверяем, был ли пользователь уже аутентифицирован
-    const authStatus = localStorage.getItem('isAuthenticated')
-    if (authStatus === 'true') {
-      setIsAuthenticated(true)
+    try {
+      const authStatus = localStorage.getItem('isAuthenticated')
+      if (authStatus === 'true') {
+        setIsAuthenticated(true)
+      }
+    } catch (error) {
+      // Safari в приватном режиме или при блокировке cookies блокирует localStorage
+      console.warn('localStorage недоступен:', error)
     }
   }, [])
 
@@ -20,7 +25,12 @@ export default function PasswordProtection({ children }: { children: React.React
     e.preventDefault()
     if (password === PASSWORD) {
       setIsAuthenticated(true)
-      localStorage.setItem('isAuthenticated', 'true')
+      try {
+        localStorage.setItem('isAuthenticated', 'true')
+      } catch (error) {
+        // Safari может блокировать localStorage, но продолжаем работу
+        console.warn('Не удалось сохранить в localStorage:', error)
+      }
       setError('')
     } else {
       setError('Неверный пароль')
@@ -30,7 +40,11 @@ export default function PasswordProtection({ children }: { children: React.React
 
   const handleLogout = () => {
     setIsAuthenticated(false)
-    localStorage.removeItem('isAuthenticated')
+    try {
+      localStorage.removeItem('isAuthenticated')
+    } catch (error) {
+      console.warn('Не удалось очистить localStorage:', error)
+    }
   }
 
   if (!isAuthenticated) {
