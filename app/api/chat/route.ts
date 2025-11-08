@@ -3,6 +3,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getEmbedding } from '@/lib/embedding-ai';
 import { createClient } from '@supabase/supabase-js';
+import { detectIntent, AGENT_PROMPTS } from '@/lib/agent-actions';
 
 export const runtime = 'nodejs'; // Changed from edge to support OpenAI SDK
 
@@ -29,6 +30,10 @@ export async function POST(req: NextRequest) {
       console.error(`[${new Date().toISOString()}] Supabase config missing`);
       return NextResponse.json({ error: 'Supabase не настроен' }, { status: 500 });
     }
+
+    // Определяем намерение пользователя
+    const intent = detectIntent(query);
+    console.log(`[${new Date().toISOString()}] Detected intent:`, intent);
 
     // 1. Получить embedding для запроса через Vercel AI SDK
     console.log(`[${new Date().toISOString()}] Generating query embedding with OpenAI...`);
@@ -74,14 +79,49 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: error.message, supabase: true }, { status: 500 });
     }
 
+    let contextText = '';
     let filteredMatches = matches || [];
-    if (sourceId) {
-      filteredMatches = filteredMatches.filter((doc: any) => doc.source_id === sourceId);
+    
+    // Специальная обработка для analyze/summarize latest document
+    if ((intent.action === 'analyze' || intent.action === 'summarize') && intent.target === 'latest') {
+      console.log('[AGENT] Loading full latest document...');
+      
+      // Получаем последний документ
+      const { data: latestDoc } = await supabase
+        .from('documents')
+        .select('id, title, created_at')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
+      
+      if (latestDoc) {
+        console.log('[AGENT] Latest document:', { id: latestDoc.id, title: latestDoc.title });
+        
+        // Загружаем ВСЕ чанки этого документа
+        const { data: chunks } = await supabase
+          .from('document_chunks')
+          .select('content, chunk_index')
+          .eq('document_id', latestDoc.id)
+          .order('chunk_index', { ascending: true });
+        
+        if (chunks && chunks.length > 0) {
+          contextText = chunks.map(c => c.content).join('\n\n');
+          console.log('[AGENT] Loaded full document:', { 
+            chunks: chunks.length, 
+            totalLength: contextText.length 
+          });
+        }
+      }
+    } else {
+      // Обычный векторный поиск
+      if (sourceId) {
+        filteredMatches = filteredMatches.filter((doc: any) => doc.source_id === sourceId);
+      }
+      contextText = filteredMatches.map((doc: any) => doc.content).join('\n---\n').substring(0, 3000);
     }
-    const contextText = filteredMatches.map((doc: any) => doc.content).join('\n---\n').substring(0, 3000);
     
     console.log('[CONTEXT]', { 
-      filteredMatchesCount: filteredMatches.length,
+      intent: intent.action,
       contextLength: contextText.length,
       contextPreview: contextText.substring(0, 200)
     });
@@ -91,7 +131,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'OpenAI API key не настроен' }, { status: 500 });
     }
 
-    const systemPrompt = `Ты — экспертный ассистент. Используй только предоставленный контекст для ответа. Отвечай кратко и по делу на русском языке. Если в контексте нет информации для ответа, скажи: "Я не нашел информации по вашему вопросу в своей базе знаний".`;
+    // Выбираем промпт в зависимости от намерения
+    const systemPrompt = AGENT_PROMPTS[intent.action];
+    console.log('[AGENT] Using system prompt for:', intent.action);
 
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
