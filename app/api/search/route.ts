@@ -1,17 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createEmbeddingProvider } from '@/lib/embeddingProviders'
+import { getEmbedding } from '@/lib/embedding-ai'
 import { supabase } from '@/utils/supabase/server'
 
 export async function POST(request: NextRequest) {
   try {
-    const { query, topK = 5, model } = await request.json()
+    const { query, topK = 5 } = await request.json()
     if (!query || typeof query !== 'string') {
       return NextResponse.json({ error: 'Нет поискового запроса' }, { status: 400 })
     }
 
-    // Генерируем эмбеддинг для запроса с учетом выбранной модели
-    const embeddingProvider = createEmbeddingProvider(model)
-    const queryEmbedding = await embeddingProvider.generateEmbedding(query)
+    // Генерируем эмбеддинг для запроса через Vercel AI SDK (OpenAI)
+    const queryEmbedding = await getEmbedding(query)
 
     // Поиск ближайших документов по вектору
     // В Supabase: embedding <-> ARRAY[...] ASC
