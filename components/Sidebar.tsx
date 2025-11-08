@@ -38,8 +38,8 @@ export default function Sidebar() {
       {/* Sidebar */}
       <aside
         className={`
-          fixed lg:static inset-y-0 left-0 z-40
-          w-64 min-h-screen 
+          fixed inset-y-0 left-0 z-40
+          w-64 h-screen 
           bg-gradient-to-b from-gray-900 via-gray-900 to-gray-950 
           backdrop-blur-lg text-white 
           flex flex-col 

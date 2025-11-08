@@ -12,7 +12,7 @@ export default function HomeLayout({
       <ClientProviders>
         <div className="flex min-h-screen">
           <Sidebar />
-          <main className="flex-1 flex flex-col items-center p-4 overflow-auto">{children}</main>
+          <main className="flex-1 flex flex-col items-center p-4 overflow-auto ml-0 lg:ml-64">{children}</main>
         </div>
       </ClientProviders>
     </div>
