@@ -120,7 +120,7 @@ export async function POST(req: NextRequest) {
     }
     // Специальная обработка для analyze/summarize LATEST document
     else if ((intent.action === 'analyze' || intent.action === 'summarize') && intent.target === 'latest') {
-      console.log('[AGENT] Loading full latest document...');
+      console.log('[AGENT] Loading latest document...');
       
       // Получаем последний документ
       const { data: latestDoc } = await supabase
@@ -133,17 +133,25 @@ export async function POST(req: NextRequest) {
       if (latestDoc) {
         console.log('[AGENT] Latest document:', { id: latestDoc.id, title: latestDoc.title });
         
-        // Загружаем ВСЕ чанки этого документа
-        const { data: chunks } = await supabase
+        // Для summarize берем первые 10 чанков (~10k tokens), для analyze - все
+        const chunkLimit = intent.action === 'summarize' ? 10 : undefined;
+        const query = supabase
           .from('document_chunks')
           .select('content, chunk_index')
           .eq('document_id', latestDoc.id)
           .order('chunk_index', { ascending: true });
         
+        if (chunkLimit) {
+          query.limit(chunkLimit);
+        }
+        
+        const { data: chunks } = await query;
+        
         if (chunks && chunks.length > 0) {
           contextText = chunks.map(c => c.content).join('\n\n');
-          console.log('[AGENT] Loaded full document:', { 
-            chunks: chunks.length, 
+          console.log('[AGENT] Loaded document:', { 
+            chunks: chunks.length,
+            limited: !!chunkLimit,
             totalLength: contextText.length 
           });
         }

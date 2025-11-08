@@ -7,7 +7,7 @@ export default function Sidebar() {
     <aside className="w-64 min-h-screen bg-gray-900/80 backdrop-blur-lg text-white flex flex-col border-r border-gray-800 shadow-2xl">
       <div className="p-6 text-2xl font-bold tracking-tight border-b border-gray-800 flex items-center gap-3">
         <svg width="28" height="28" fill="none" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="#2563eb"/><text x="12" y="17" textAnchor="middle" fontSize="14" fill="#fff" fontWeight="bold">ML</text></svg>
-        MyLove RAG
+        MyLove
       </div>
       <div className="p-4 border-b border-gray-800">
         <StatsPanel />
