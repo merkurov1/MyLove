@@ -58,6 +58,17 @@ export async function POST(req: NextRequest) {
       match_count: 5
     });
 
+    console.log(`[${new Date().toISOString()}] RPC match_documents called`);
+    console.log('[RPC RESULT]', { 
+      matchesCount: matches?.length || 0, 
+      error: error?.message,
+      firstMatch: matches?.[0] ? { 
+        id: matches[0].id, 
+        similarity: matches[0].similarity,
+        contentPreview: matches[0].content?.substring(0, 100) 
+      } : null
+    });
+
     if (error) {
       console.error('[SUPABASE RPC ERROR]', { error: error.message, full: error });
       return NextResponse.json({ error: error.message, supabase: true }, { status: 500 });
