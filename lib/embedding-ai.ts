@@ -17,11 +17,11 @@ export async function getEmbedding(text: string): Promise<number[]> {
 
 /**
  * Generate multiple embeddings in batch with automatic batching
- * OpenAI has a limit of ~300k tokens per request
- * We batch by 50 texts at a time to stay well under the limit
+ * OpenAI embedding API has a limit of 8192 tokens per request
+ * Average chunk is ~500 tokens, so we batch by 10 to stay safe (10 * 500 = 5000 tokens)
  */
 export async function getEmbeddings(texts: string[]): Promise<number[][]> {
-  const BATCH_SIZE = 50; // Безопасный размер батча
+  const BATCH_SIZE = 10; // Консервативный размер для больших чанков
   const allEmbeddings: number[][] = [];
   
   console.log(`[getEmbeddings] Processing ${texts.length} texts in batches of ${BATCH_SIZE}`);
