@@ -3,6 +3,7 @@ import { supabase } from '@/utils/supabase/server';
 import { splitIntoChunks } from '@/lib/chunking';
 import { getEmbeddings } from '@/lib/embedding-ai';
 import crypto from 'crypto';
+import mammoth from 'mammoth';
 
 export const runtime = 'nodejs';
 
@@ -18,7 +19,29 @@ export async function POST(req: NextRequest) {
   }
 
   const arrayBuffer = await file.arrayBuffer();
-  let text = Buffer.from(arrayBuffer).toString('utf-8');
+  let text: string;
+  
+  // Определяем тип файла и парсим соответственно
+  const fileName = file.name.toLowerCase();
+  if (fileName.endsWith('.docx')) {
+    console.log(`[${new Date().toISOString()}] Parsing .docx file with mammoth`);
+    try {
+      const result = await mammoth.extractRawText({ buffer: Buffer.from(arrayBuffer) });
+      text = result.value;
+      if (result.messages.length > 0) {
+        console.warn('[Ingest] Mammoth warnings:', result.messages);
+      }
+    } catch (error: any) {
+      console.error('[Ingest] Error parsing .docx:', error);
+      return NextResponse.json({ 
+        error: 'Не удалось прочитать .docx файл', 
+        details: error.message 
+      }, { status: 400 });
+    }
+  } else {
+    // Для .txt и других текстовых файлов читаем как UTF-8
+    text = Buffer.from(arrayBuffer).toString('utf-8');
+  }
   
   // КРИТИЧЕСКОЕ: Удаляем нулевые байты и другие проблемные Unicode символы
   // PostgreSQL не поддерживает \u0000 в text полях
