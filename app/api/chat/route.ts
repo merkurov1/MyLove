@@ -79,6 +79,12 @@ export async function POST(req: NextRequest) {
       filteredMatches = filteredMatches.filter((doc: any) => doc.source_id === sourceId);
     }
     const contextText = filteredMatches.map((doc: any) => doc.content).join('\n---\n').substring(0, 3000);
+    
+    console.log('[CONTEXT]', { 
+      filteredMatchesCount: filteredMatches.length,
+      contextLength: contextText.length,
+      contextPreview: contextText.substring(0, 200)
+    });
 
     // 3. Сформировать промпт и получить ответ от OpenAI
     if (!process.env.OPENAI_API_KEY) {
