@@ -44,10 +44,14 @@ export async function POST(req: NextRequest) {
     const lowerQuery = query.toLowerCase();
     
     // Если запрос о "Новой Газете" + "колонки" - расширяем контекст
+    // Проверяем разные падежи: новая/новой/новую газета/газете/газету
     const mentionsNovajaGazeta = 
-      lowerQuery.includes('новой газет') ||
-      lowerQuery.includes('новая газет') ||
-      lowerQuery.includes('нов. газет');
+      lowerQuery.includes('новой газет') ||  // родительный: из Новой Газеты
+      lowerQuery.includes('новая газет') ||   // именительный: Новая Газета
+      lowerQuery.includes('новую газет') ||   // винительный: в Новую Газету
+      lowerQuery.includes('нов. газет') ||    // сокращение: Нов. Газета
+      lowerQuery.includes('novayagazeta') ||  // латиницей в URL
+      lowerQuery.includes('novaya gazeta');
     
     const mentionsColumns = 
       lowerQuery.includes('колонк') ||
