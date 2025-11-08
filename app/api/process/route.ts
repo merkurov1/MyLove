@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getEmbedding } from '@/lib/embedding'
+import { getEmbedding } from '@/lib/embedding-ai'
 import { supabase } from '@/utils/supabase/server'
 import crypto from 'crypto'
 import axios from 'axios'
@@ -94,7 +94,7 @@ async function scrapeWebPage(url: string): Promise<string> {
   }
 }
 
-// Функция для обработки и сохранения чанков
+// Функция для обработки и сохранения чанков (обновлена для новой структуры БД)
 async function processAndSaveChunks(
   content: string, 
   sourceId: string, 
@@ -107,7 +107,7 @@ async function processAndSaveChunks(
   })
   
   console.log('Environment check:', {
-    HF_API_KEY: process.env.HF_API_KEY ? 'SET' : 'NOT_SET',
+    OPENAI_API_KEY: process.env.OPENAI_API_KEY ? 'SET' : 'NOT_SET',
     SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY ? 'SET' : 'NOT_SET'
   })
   
@@ -117,49 +117,55 @@ async function processAndSaveChunks(
   let savedChunks = 0
   const errors: any[] = []
 
+  // Создаем документ один раз
+  const { data: doc, error: docError } = await supabase
+    .from('documents')
+    .insert({
+      title: metadata.filename || metadata.url || 'Processed Document',
+      description: metadata.content_type || '',
+      source_url: metadata.url || null,
+      source_id: sourceId
+    })
+    .select()
+    .single()
+
+  if (docError || !doc) {
+    console.error('Failed to create document:', docError)
+    return { totalChunks: chunks.length, savedChunks: 0, errors: [{ stage: 'create-document', error: docError }] }
+  }
+
+  console.log(`Document created with ID: ${doc.id}`)
+
   for (let i = 0; i < chunks.length; i++) {
     const chunk = chunks[i]
     try {
       console.log(`Processing chunk ${i + 1}/${chunks.length}, length: ${chunk.length}`)
       const checksum = calculateChecksum(chunk)
-      // Проверяем, существует ли уже такой чанк
-      const { data: existingDoc, error: checkError } = await supabase
-        .from('documents')
-        .select('id')
-        .eq('checksum', checksum)
-        .single()
-      if (checkError && checkError.code !== 'PGRST116') {
-        errors.push({ stage: 'check-exists', chunk: i + 1, error: checkError })
-        console.error(`Chunk ${i + 1}: check-exists error:`, checkError)
-        continue
-      }
-      if (existingDoc) {
-        console.log(`Chunk ${i + 1}: already exists, skipping`)
-        continue
-      }
+      
       // Генерируем эмбеддинг
       console.log(`Chunk ${i + 1}: generating embedding...`)
       const embedding = await getEmbedding(chunk)
-      if (!Array.isArray(embedding) || embedding.length !== 768) {
-        throw new Error(`Embedding must be an array of 768 numbers, got: ${embedding && embedding.length}`)
+      if (!Array.isArray(embedding) || embedding.length !== 1536) {
+        throw new Error(`Embedding must be an array of 1536 numbers, got: ${embedding && embedding.length}`)
       }
       console.log(`Chunk ${i + 1}: embedding generated, length: ${embedding.length}`)
-      // Сохраняем в базу данных
+      
+      // Сохраняем чанк в базу данных
       console.log(`Chunk ${i + 1}: saving to database...`)
       const { error: insertError } = await supabase
-        .from('documents')
+        .from('document_chunks')
         .insert({
+          document_id: doc.id,
+          chunk_index: i,
           content: chunk,
           embedding,
           checksum,
-          source_id: sourceId,
           metadata: {
             ...metadata,
-            chunk_length: chunk.length,
-            embedding_provider: 'fireworks-nomic-v1.5'
-          },
-          embedding_provider: 'fireworks-nomic-v1.5'
+            chunk_length: chunk.length
+          }
         })
+        
       if (insertError) {
         errors.push({ stage: 'insert', chunk: i + 1, error: insertError })
         console.error(`Chunk ${i + 1}: save error:`, insertError)

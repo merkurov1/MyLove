@@ -63,7 +63,7 @@ export default function UploadTabs({ sources }: UploadTabsProps) {
       </div>
       <div>
         {activeTab === 'file' ? (
-          <FileUploader />
+          <FileUploader sourceId={sourceId} />
         ) : (
           <LinkProcessor sources={sources} sourceId={sourceId} setSourceId={setSourceId} />
         )}

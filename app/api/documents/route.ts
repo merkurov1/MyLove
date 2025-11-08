@@ -2,11 +2,21 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/utils/supabase/server'
 
 export async function GET() {
+  // Получаем документы с их чанками
   const { data, error } = await supabase
     .from('documents')
-    .select('id, content, metadata, created_at, source_id, embedding_provider')
+    .select(`
+      id, 
+      title, 
+      description, 
+      source_url, 
+      created_at, 
+      source_id,
+      document_chunks(id, content, chunk_index)
+    `)
     .order('created_at', { ascending: false })
     .limit(100)
+  
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json({ docs: data })
 }

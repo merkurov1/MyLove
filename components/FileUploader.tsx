@@ -1,7 +1,11 @@
 "use client";
 import React, { useRef, useState } from "react";
 
-export default function FileUploader() {
+interface FileUploaderProps {
+  sourceId?: string;
+}
+
+export default function FileUploader({ sourceId }: FileUploaderProps) {
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -32,6 +36,9 @@ export default function FileUploader() {
     setMessage(null);
     const formData = new FormData();
     formData.append("file", file);
+    if (sourceId) {
+      formData.append("sourceId", sourceId);
+    }
     try {
       const res = await fetch("/api/ingest", {
         method: "POST",
@@ -40,11 +47,14 @@ export default function FileUploader() {
       const data = await res.json();
       if (res.ok) {
         setMessage("Файл успешно загружен и обработан!");
+        console.log("Upload success:", data);
       } else {
         setMessage(data.error || "Ошибка загрузки файла");
+        console.error("Upload error:", data);
       }
     } catch (err) {
       setMessage("Ошибка загрузки файла");
+      console.error("Upload exception:", err);
     } finally {
       setUploading(false);
       setProgress(0);
