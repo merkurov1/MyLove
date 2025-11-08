@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { FaUser, FaRobot, FaPaperPlane, FaCircleExclamation, FaClockRotateLeft, FaPlus, FaXmark, FaComments } from "react-icons/fa6";
+import { FaUser, FaRobot, FaPaperPlane, FaCircleExclamation, FaClockRotateLeft, FaPlus, FaXmark, FaComments, FaCopy, FaCheck } from "react-icons/fa6";
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
@@ -9,6 +9,7 @@ interface Message {
   role: "user" | "assistant" | "error";
   content: string;
   sources?: string;
+  timestamp?: Date;
 }
 
 interface Stats {
@@ -27,6 +28,25 @@ interface Conversation {
     created_at: string;
   };
 }
+
+// Relative time formatting
+const getRelativeTime = (date: Date | undefined) => {
+  if (!date) return '';
+  
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffSecs = Math.floor(diffMs / 1000);
+  const diffMins = Math.floor(diffSecs / 60);
+  const diffHours = Math.floor(diffMins / 60);
+  const diffDays = Math.floor(diffHours / 24);
+  
+  if (diffSecs < 10) return 'только что';
+  if (diffSecs < 60) return `${diffSecs} сек назад`;
+  if (diffMins < 60) return `${diffMins} мин назад`;
+  if (diffHours < 24) return `${diffHours} ч назад`;
+  if (diffDays === 1) return 'вчера';
+  return date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
+};
 
 export default function ChatAssistant() {
   const [userInput, setUserInput] = useState("");
@@ -148,7 +168,7 @@ export default function ChatAssistant() {
     if (!userInput.trim()) return;
     
     const currentQuery = userInput;
-    setChatHistory((prev) => [...prev, { role: "user", content: currentQuery }]);
+    setChatHistory((prev) => [...prev, { role: "user", content: currentQuery, timestamp: new Date() }]);
     setUserInput("");
     setIsLoading(true);
     
@@ -187,7 +207,8 @@ export default function ChatAssistant() {
         { 
           role: "assistant", 
           content: parsed.answer,
-          sources: parsed.sources
+          sources: parsed.sources,
+          timestamp: new Date()
         },
       ]);
 
@@ -338,8 +359,41 @@ export default function ChatAssistant() {
                     {msg.role === "user" ? (
                       <div className="whitespace-pre-line">{msg.content}</div>
                     ) : (
-                      <div className="prose prose-sm dark:prose-invert max-w-none prose-headings:mt-3 prose-headings:mb-2 prose-p:my-2 prose-ul:my-2 prose-ol:my-2 prose-li:my-1 prose-pre:my-2 prose-pre:bg-gray-100 dark:prose-pre:bg-gray-900 prose-code:text-blue-600 dark:prose-code:text-blue-400 prose-code:bg-gray-100 dark:prose-code:bg-gray-800 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-a:text-blue-600 dark:prose-a:text-blue-400 prose-strong:text-gray-900 dark:prose-strong:text-gray-100">
-                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                      <div className="prose prose-sm dark:prose-invert max-w-none prose-headings:mt-3 prose-headings:mb-2 prose-p:my-2 prose-ul:my-2 prose-ol:my-2 prose-li:my-1 prose-pre:my-2 prose-pre:relative prose-pre:bg-gray-100 dark:prose-pre:bg-gray-900 prose-code:text-blue-600 dark:prose-code:text-blue-400 prose-code:bg-gray-100 dark:prose-code:bg-gray-800 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-a:text-blue-600 dark:prose-a:text-blue-400 prose-strong:text-gray-900 dark:prose-strong:text-gray-100">
+                        <ReactMarkdown 
+                          remarkPlugins={[remarkGfm]}
+                          components={{
+                            code: ({ node, inline, className, children, ...props }: any) => {
+                              const [copied, setCopied] = useState(false);
+                              const codeString = String(children).replace(/\n$/, '');
+                              
+                              const handleCopy = () => {
+                                navigator.clipboard.writeText(codeString);
+                                setCopied(true);
+                                setTimeout(() => setCopied(false), 2000);
+                              };
+                              
+                              if (inline) {
+                                return <code className={className} {...props}>{children}</code>;
+                              }
+                              
+                              return (
+                                <div className="relative group">
+                                  <button
+                                    onClick={handleCopy}
+                                    className="absolute top-2 right-2 p-2 bg-gray-700 hover:bg-gray-600 text-white rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                                    title={copied ? "Скопировано!" : "Копировать код"}
+                                  >
+                                    {copied ? <FaCheck className="text-sm" /> : <FaCopy className="text-sm" />}
+                                  </button>
+                                  <code className={className} {...props}>
+                                    {children}
+                                  </code>
+                                </div>
+                              );
+                            }
+                          }}
+                        >
                           {msg.content}
                         </ReactMarkdown>
                       </div>
@@ -356,6 +410,13 @@ export default function ChatAssistant() {
                         </div>
                       </div>
                     )}
+                    
+                    {/* Timestamp */}
+                    {msg.timestamp && (
+                      <div className={`text-xs mt-2 ${msg.role === "user" ? "text-blue-200" : "text-gray-400 dark:text-gray-500"}`}>
+                        {getRelativeTime(msg.timestamp)}
+                      </div>
+                    )}
                   </div>
                   {msg.role === "user" && (
                     <div className="flex-shrink-0 w-12 h-12 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center shadow-lg">
@@ -366,17 +427,23 @@ export default function ChatAssistant() {
               );
             })}
             {isLoading && (
-              <div className="flex items-end gap-4 justify-start">
+              <div className="flex items-end gap-4 justify-start animate-fade-in-left">
                 <div className="flex-shrink-0 w-12 h-12 rounded-full bg-blue-100 dark:bg-blue-900 flex items-center justify-center shadow-lg">
                   <FaRobot className="text-blue-500 text-2xl animate-bounce" />
                 </div>
-                <div className="max-w-[70%] px-6 py-4 rounded-2xl text-base bg-white/90 dark:bg-gray-800/90 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700 flex items-center gap-2">
-                  <span>AI думает</span>
-                  <span className="typing-dots">
-                    <span></span>
-                    <span></span>
-                    <span></span>
-                  </span>
+                <div className="max-w-[70%] px-6 py-4 rounded-2xl text-base bg-white/90 dark:bg-gray-800/90 border border-gray-200 dark:border-gray-700 space-y-2">
+                  {/* Skeleton loader */}
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className="text-gray-700 dark:text-gray-300">AI думает</span>
+                    <span className="typing-dots">
+                      <span></span>
+                      <span></span>
+                      <span></span>
+                    </span>
+                  </div>
+                  <div className="skeleton-line h-4 w-full"></div>
+                  <div className="skeleton-line h-4 w-5/6"></div>
+                  <div className="skeleton-line h-4 w-4/5"></div>
                 </div>
               </div>
             )}

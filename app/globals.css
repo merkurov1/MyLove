@@ -113,3 +113,35 @@
 .animate-fade-in-right {
 	animation: fade-in-right 0.3s ease-out;
 }
+
+/* Skeleton Loader */
+.skeleton-line {
+	background: linear-gradient(
+		90deg,
+		rgba(229, 231, 235, 0.4) 0%,
+		rgba(229, 231, 235, 0.8) 50%,
+		rgba(229, 231, 235, 0.4) 100%
+	);
+	background-size: 200% 100%;
+	border-radius: 4px;
+	animation: skeleton-shimmer 1.5s infinite ease-in-out;
+}
+
+.dark .skeleton-line {
+	background: linear-gradient(
+		90deg,
+		rgba(55, 65, 81, 0.4) 0%,
+		rgba(55, 65, 81, 0.8) 50%,
+		rgba(55, 65, 81, 0.4) 100%
+	);
+	background-size: 200% 100%;
+}
+
+@keyframes skeleton-shimmer {
+	0% {
+		background-position: 200% 0;
+	}
+	100% {
+		background-position: -200% 0;
+	}
+}
