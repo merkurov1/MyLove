@@ -53,6 +53,19 @@ export async function POST(req: NextRequest) {
       lowerQuery.includes('novayagazeta') ||  // латиницей в URL
       lowerQuery.includes('novaya gazeta');
     
+    const mentionsSubstack = 
+      lowerQuery.includes('substack') ||
+      lowerQuery.includes('рассылк') ||
+      lowerQuery.includes('newsletter') ||
+      lowerQuery.includes('блог');
+    
+    const mentionsCV = 
+      lowerQuery.includes('cv') ||
+      lowerQuery.includes('резюме') ||
+      lowerQuery.includes('карьер') ||
+      lowerQuery.includes('опыт работ') ||
+      lowerQuery.includes('биограф');
+    
     const mentionsColumns = 
       lowerQuery.includes('колонк') ||
       lowerQuery.includes('статьях') ||
@@ -63,10 +76,16 @@ export async function POST(req: NextRequest) {
       lowerQuery.includes('психолингв') ||
       lowerQuery.includes('анализ автор');
     
-    // Если это запрос о профайлинге АВТОРА колонок, добавляем контекст
+    // Query expansion в зависимости от источника
     if (mentionsNovajaGazeta && (mentionsColumns || mentionsProfile)) {
       expandedQuery = query + ' Новая Газета колонка журналистика публикация медиа';
       console.log('[QUERY EXPANSION] Expanded for Novaya Gazeta columns:', expandedQuery);
+    } else if (mentionsSubstack) {
+      expandedQuery = query + ' Substack рассылка блог личные размышления';
+      console.log('[QUERY EXPANSION] Expanded for Substack:', expandedQuery);
+    } else if (mentionsCV) {
+      expandedQuery = query + ' резюме опыт работы карьера образование навыки';
+      console.log('[QUERY EXPANSION] Expanded for CV:', expandedQuery);
     }
 
     // 2. Получить embedding для расширенного запроса через Vercel AI SDK
@@ -96,6 +115,29 @@ export async function POST(req: NextRequest) {
     // Используем гибридный поиск (keyword + vector) для лучшей точности
     let matchCount = 7;
     
+    // АДАПТИВНЫЕ ВЕСА: в зависимости от типа запроса и длины
+    let keyword_weight = 0.3; // по умолчанию
+    let semantic_weight = 0.7;
+    
+    // Короткие запросы (< 20 символов) — больше keyword matching
+    if (query.length < 20) {
+      keyword_weight = 0.6;
+      semantic_weight = 0.4;
+      console.log('[HYBRID] Short query detected, using keyword_weight=0.6');
+    }
+    // Упоминание конкретных источников — больше keyword для точности
+    else if (mentionsNovajaGazeta || mentionsSubstack || mentionsCV) {
+      keyword_weight = 0.5;
+      semantic_weight = 0.5;
+      console.log('[HYBRID] Specific source mentioned, using keyword_weight=0.5');
+    }
+    // Аналитические запросы — больше semantic для понимания контекста
+    else if (intent.action === 'analyze' || intent.action === 'compare') {
+      keyword_weight = 0.2;
+      semantic_weight = 0.8;
+      console.log('[HYBRID] Analytical query, using semantic_weight=0.8');
+    }
+    
     // Для гибридного поиска используем ОБА запроса:
     // - query (original) для keyword matching (точные совпадения "Новая Газета")
     // - expandedQuery embedding для semantic matching (расширенный контекст)
@@ -103,8 +145,8 @@ export async function POST(req: NextRequest) {
       query_text: query,  // Оригинал для keyword matching
       query_embedding: queryEmbedding,  // Расширенный для semantic
       match_count: matchCount,
-      keyword_weight: 0.4,  // Увеличили вес keywords для "Новая Газета"
-      semantic_weight: 0.6
+      keyword_weight,
+      semantic_weight
     });
     
     // Fallback на обычный векторный если гибридный недоступен
@@ -169,9 +211,13 @@ export async function POST(req: NextRequest) {
     let contextText = '';
     let filteredMatches = matches || [];
     
-    // ФИЛЬТРАЦИЯ: Если запрос о "Новой Газете", фильтруем результаты по source_url
-    if (mentionsNovajaGazeta && filteredMatches.length > 0) {
-      console.log('[FILTER] Query mentions Novaya Gazeta, filtering by source_url...');
+    // ФИЛЬТРАЦИЯ: Если запрос о конкретном источнике, фильтруем результаты по source_url
+    const needsFiltering = mentionsNovajaGazeta || mentionsSubstack || mentionsCV;
+    
+    if (needsFiltering && filteredMatches.length > 0) {
+      const filterType = mentionsNovajaGazeta ? 'Novaya Gazeta' : 
+                         mentionsSubstack ? 'Substack' : 'CV';
+      console.log(`[FILTER] Query mentions ${filterType}, filtering by source_url...`);
       const beforeCount = filteredMatches.length;
       
       // Получаем source_url для каждого чанка через document_id
@@ -179,18 +225,28 @@ export async function POST(req: NextRequest) {
       if (documentIds.length > 0) {
         const { data: docs } = await supabase
           .from('documents')
-          .select('id, source_url')
+          .select('id, source_url, title')
           .in('id', documentIds);
         
-        const docMap = new Map(docs?.map((d: any) => [d.id, d.source_url]) || []);
+        const docMap = new Map(docs?.map((d: any) => [d.id, { url: d.source_url, title: d.title }]) || []);
         
-        // Фильтруем только чанки из документов Новой Газеты
+        // Фильтруем по соответствующему источнику
         filteredMatches = filteredMatches.filter((m: any) => {
-          const sourceUrl = docMap.get(m.document_id);
-          return sourceUrl && sourceUrl.includes('novayagazeta');
+          const doc = docMap.get(m.document_id);
+          if (!doc) return false;
+          
+          if (mentionsNovajaGazeta) {
+            return doc.url && doc.url.includes('novayagazeta');
+          } else if (mentionsSubstack) {
+            return doc.url && doc.url.includes('substack');
+          } else if (mentionsCV) {
+            return doc.title && (doc.title.toLowerCase().includes('cv') || 
+                                 doc.title.toLowerCase().includes('резюме'));
+          }
+          return true;
         });
         
-        console.log(`[FILTER] Filtered from ${beforeCount} to ${filteredMatches.length} chunks (Novaya Gazeta only)`);
+        console.log(`[FILTER] Filtered from ${beforeCount} to ${filteredMatches.length} chunks (${filterType} only)`);
       }
     }
     
@@ -204,10 +260,16 @@ export async function POST(req: NextRequest) {
         .select('id, title, created_at, source_url')
         .order('created_at', { ascending: false });
       
-      // Если запрос о Новой Газете - берём только документы из НГ
+      // Фильтруем по источнику если указан
       if (mentionsNovajaGazeta) {
         console.log('[AGENT] Filtering documents by Novaya Gazeta source...');
         docsQuery = docsQuery.ilike('source_url', '%novayagazeta%');
+      } else if (mentionsSubstack) {
+        console.log('[AGENT] Filtering documents by Substack source...');
+        docsQuery = docsQuery.ilike('source_url', '%substack%');
+      } else if (mentionsCV) {
+        console.log('[AGENT] Filtering documents by CV/Resume...');
+        docsQuery = docsQuery.or('title.ilike.%cv%,title.ilike.%резюме%');
       }
       
       docsQuery = docsQuery.limit(10); // Ограничиваем 10 документами
@@ -331,9 +393,29 @@ export async function POST(req: NextRequest) {
     // Аналитика требует больше токенов и меньше креативности
     const isAnalytical = ['analyze', 'multi_analyze', 'compare'].includes(intent.action);
     const temperature = isAnalytical ? 0.4 : 0.6;  // Аналитика: точнее, QA: чуть свободнее
-    const maxTokens = isAnalytical ? 2500 : (intent.action === 'summarize' ? 800 : 1500);
     
-    console.log('[GENERATION PARAMS]', { promptKey, temperature, maxTokens });
+    // CONTEXT WINDOW MANAGEMENT: динамически рассчитываем max_tokens
+    // gpt-4o-mini имеет context window 128k tokens
+    const estimatedContextTokens = Math.ceil(contextText.length / 4); // ~4 chars per token
+    const estimatedPromptTokens = Math.ceil(systemPrompt.length / 4);
+    const estimatedQueryTokens = Math.ceil(query.length / 4);
+    const usedTokens = estimatedContextTokens + estimatedPromptTokens + estimatedQueryTokens + 500; // +500 буфер
+    
+    const maxContextWindow = 128000; // gpt-4o-mini limit
+    const availableTokens = maxContextWindow - usedTokens;
+    
+    // Базовые лимиты по типу задачи
+    const baseMaxTokens = isAnalytical ? 3000 : (intent.action === 'summarize' ? 800 : 1500);
+    // Но не больше доступного в context window
+    const maxTokens = Math.min(baseMaxTokens, Math.max(500, availableTokens));
+    
+    console.log('[GENERATION PARAMS]', { 
+      promptKey, 
+      temperature, 
+      maxTokens,
+      contextTokens: estimatedContextTokens,
+      availableTokens 
+    });
 
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
