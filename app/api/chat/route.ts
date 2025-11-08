@@ -289,6 +289,14 @@ export async function POST(req: NextRequest) {
     const systemPrompt = AGENT_PROMPTS[promptKey as keyof typeof AGENT_PROMPTS];
     console.log('[AGENT] Using system prompt for:', promptKey);
 
+    // Настройки генерации в зависимости от типа задачи
+    // Аналитика требует больше токенов и меньше креативности
+    const isAnalytical = ['analyze', 'multi_analyze', 'compare'].includes(intent.action);
+    const temperature = isAnalytical ? 0.4 : 0.6;  // Аналитика: точнее, QA: чуть свободнее
+    const maxTokens = isAnalytical ? 2500 : (intent.action === 'summarize' ? 800 : 1500);
+    
+    console.log('[GENERATION PARAMS]', { promptKey, temperature, maxTokens });
+
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -301,8 +309,8 @@ export async function POST(req: NextRequest) {
           { role: 'system', content: systemPrompt },
           { role: 'user', content: `Контекст:\n${contextText}\n\nВопрос: ${query}` }
         ],
-        temperature: 0.7,
-        max_tokens: 1000 // Увеличили для более полных ответов
+        temperature,
+        max_tokens: maxTokens
       })
     });
 
