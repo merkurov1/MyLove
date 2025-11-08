@@ -337,7 +337,7 @@ export async function POST(req: NextRequest) {
     
     // Сохраняем сообщения
     if (currentConversationId) {
-      await supabase.from('messages').insert([
+      const { error: msgError } = await supabase.from('messages').insert([
         {
           conversation_id: currentConversationId,
           role: 'user',
@@ -353,11 +353,21 @@ export async function POST(req: NextRequest) {
         }
       ]);
       
+      if (msgError) {
+        console.error('[CONVERSATION] Failed to save messages:', msgError);
+      } else {
+        console.log('[CONVERSATION] Messages saved successfully');
+      }
+      
       // Обновляем updated_at в conversations
-      await supabase
+      const { error: updateError } = await supabase
         .from('conversations')
         .update({ updated_at: new Date().toISOString() })
         .eq('id', currentConversationId);
+      
+      if (updateError) {
+        console.error('[CONVERSATION] Failed to update timestamp:', updateError);
+      }
       
       console.log('[CONVERSATION] Saved to DB:', currentConversationId);
     }
