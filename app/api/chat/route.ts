@@ -3,7 +3,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getEmbedding } from '@/lib/embedding-ai';
 import { createClient } from '@supabase/supabase-js';
-import { detectIntent, AGENT_PROMPTS } from '@/lib/agent-actions';
+import { detectIntent, AGENT_PROMPTS, formatResponseWithSources, extractCitations } from '@/lib/agent-actions';
 
 export const runtime = 'nodejs'; // Changed from edge to support OpenAI SDK
 
@@ -170,7 +170,36 @@ export async function POST(req: NextRequest) {
     }
 
     console.log(`[${new Date().toISOString()}] Response generated successfully`);
-    return NextResponse.json({ reply: answer });
+    
+    // Получаем информацию о документах для цитат
+    let sources: any[] = [];
+    if (filteredMatches && filteredMatches.length > 0) {
+      const documentIds = Array.from(new Set(filteredMatches.map((m: any) => m.document_id).filter(Boolean)));
+      
+      if (documentIds.length > 0) {
+        const { data: docs } = await supabase
+          .from('documents')
+          .select('id, title')
+          .in('id', documentIds);
+        
+        const docMap = new Map(docs?.map((d: any) => [d.id, d.title]) || []);
+        sources = extractCitations(filteredMatches, docMap);
+        
+        console.log('[CITATIONS]', { sourcesCount: sources.length });
+      }
+    }
+    
+    // Форматируем ответ с цитатами
+    const formattedReply = formatResponseWithSources(answer, sources);
+    
+    // Сохраняем разговор (пока без conversationId, добавим позже)
+    // TODO: Implement conversation persistence
+    
+    return NextResponse.json({ 
+      reply: formattedReply,
+      sources,
+      intent: intent.action
+    });
 
   } catch (err: any) {
     console.error('[GLOBAL CATCH ERROR]', {

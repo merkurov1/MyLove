@@ -14,6 +14,21 @@ export interface AgentIntent {
   confidence: number
 }
 
+export interface SourceCitation {
+  documentId: string
+  documentTitle: string
+  chunkId: string
+  quote: string
+  similarity: number
+}
+
+export interface AgentResponse {
+  reply: string
+  sources?: SourceCitation[]
+  intent: AgentIntent
+  conversationId?: string
+}
+
 /**
  * Определяет намерение пользователя из запроса
  */
@@ -131,4 +146,40 @@ export const AGENT_PROMPTS = {
 Если информации нет — скажи честно. Не выдумывай.`,
 
   qa: `Ты — экспертный ассистент. Используй только предоставленный контекст для ответа. Отвечай кратко и по делу на русском языке. Если в контексте нет информации для ответа, скажи: "Я не нашел информации по вашему вопросу в своей базе знаний".`
+}
+
+/**
+ * Форматирует ответ с цитатами источников
+ */
+export function formatResponseWithSources(
+  reply: string, 
+  sources: SourceCitation[]
+): string {
+  if (!sources || sources.length === 0) return reply
+  
+  let formatted = reply + '\n\n---\n\n**📚 Источники:**\n\n'
+  
+  sources.forEach((source, i) => {
+    formatted += `${i + 1}. **${source.documentTitle}**\n`
+    formatted += `   💬 _"${source.quote.substring(0, 150)}${source.quote.length > 150 ? '...' : ''}"_\n`
+    formatted += `   🎯 Релевантность: ${(source.similarity * 100).toFixed(0)}%\n\n`
+  })
+  
+  return formatted
+}
+
+/**
+ * Извлекает релевантные цитаты из matches
+ */
+export function extractCitations(
+  matches: any[],
+  documentMap: Map<string, string>
+): SourceCitation[] {
+  return matches.slice(0, 3).map(match => ({
+    documentId: match.document_id || match.id,
+    documentTitle: documentMap.get(match.document_id || match.id) || 'Неизвестный документ',
+    chunkId: match.id,
+    quote: match.content?.substring(0, 300) || '',
+    similarity: match.similarity || 0
+  }))
 }
