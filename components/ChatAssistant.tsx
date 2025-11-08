@@ -37,6 +37,7 @@ export default function ChatAssistant() {
   const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
   const [showHistory, setShowHistory] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   // Загружаем статистику и историю разговоров при монтировании
   useEffect(() => {
@@ -53,6 +54,32 @@ export default function ChatAssistant() {
     // История разговоров
     loadConversations();
   }, []);
+
+  // KEYBOARD SHORTCUTS
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ctrl+K / Cmd+K - фокус на инпут
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault();
+        inputRef.current?.focus();
+      }
+      
+      // Escape - закрыть историю
+      if (e.key === 'Escape' && showHistory) {
+        e.preventDefault();
+        setShowHistory(false);
+      }
+      
+      // Ctrl+N / Cmd+N - новый чат
+      if ((e.ctrlKey || e.metaKey) && e.key === 'n') {
+        e.preventDefault();
+        startNewConversation();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [showHistory]);
 
   // Загрузка списка разговоров
   const loadConversations = async () => {
@@ -262,8 +289,16 @@ export default function ChatAssistant() {
         {/* Chat Messages */}
         <div className="flex-1 overflow-y-auto px-6 py-8 space-y-8 scrollbar-thin scrollbar-thumb-blue-200 dark:scrollbar-thumb-blue-900 bg-gradient-to-b from-white/80 to-blue-50/60 dark:from-gray-900/80 dark:to-gray-950/60">
             {chatHistory.length === 0 && (
-              <div className="text-center text-gray-400 dark:text-gray-500 py-16 text-xl select-none">
-                Начните разговор с AI-ассистентом
+              <div className="flex flex-col items-center justify-center py-20 text-center select-none">
+                <svg className="w-24 h-24 text-gray-300 dark:text-gray-700 mb-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+                </svg>
+                <h3 className="text-xl font-semibold text-gray-600 dark:text-gray-400 mb-2">
+                  Начните разговор с AI-ассистентом
+                </h3>
+                <p className="text-sm text-gray-400 dark:text-gray-600 max-w-md">
+                  Задайте вопрос о документах, попросите анализ или сравнение текстов
+                </p>
               </div>
             )}
             {chatHistory.map((msg, i) => {
@@ -335,8 +370,13 @@ export default function ChatAssistant() {
                 <div className="flex-shrink-0 w-12 h-12 rounded-full bg-blue-100 dark:bg-blue-900 flex items-center justify-center shadow-lg">
                   <FaRobot className="text-blue-500 text-2xl animate-bounce" />
                 </div>
-                <div className="max-w-[70%] px-6 py-4 rounded-2xl text-base bg-white/80 dark:bg-gray-800/80 text-gray-400 animate-pulse border border-gray-200 dark:border-gray-700">
-                  AI думает...
+                <div className="max-w-[70%] px-6 py-4 rounded-2xl text-base bg-white/90 dark:bg-gray-800/90 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700 flex items-center gap-2">
+                  <span>AI думает</span>
+                  <span className="typing-dots">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                  </span>
                 </div>
               </div>
             )}
@@ -344,9 +384,10 @@ export default function ChatAssistant() {
           </div>
         <form onSubmit={handleSubmit} className="flex items-center gap-4 px-6 py-5 border-t border-gray-200 dark:border-gray-800 bg-white/90 dark:bg-gray-900/90 flex-shrink-0">
           <input
+            ref={inputRef}
             type="text"
             className="flex-1 border border-gray-300 dark:border-gray-700 rounded-full px-6 py-4 text-base bg-white/95 dark:bg-gray-800/95 text-gray-900 dark:text-gray-100 shadow focus:outline-none focus:ring-2 focus:ring-blue-400 transition placeholder-gray-400 dark:placeholder-gray-500"
-            placeholder="Задайте вопрос..."
+            placeholder="Задайте вопрос... (Ctrl+K)"
             value={userInput}
             onChange={(e) => setUserInput(e.target.value)}
             disabled={isLoading}
