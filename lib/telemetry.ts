@@ -32,27 +32,18 @@ export interface QueryMetrics {
 }
 
 /**
- * Логирует метрики запроса в структурированном JSON формате
- * Можно потом анализировать или отправлять в monitoring system
+ * Логирует метрики запроса (упрощенная версия для single-user)
  */
 export function trackQuery(metrics: QueryMetrics) {
-  // Структурированный лог для легкого парсинга
-  console.log('[METRICS]', JSON.stringify({
-    ...metrics,
-    // Добавляем вычисляемые метрики
-    quality_score: calculateQualityScore(metrics),
-    performance_grade: getPerformanceGrade(metrics.total_latency_ms)
-  }));
+  const quality = calculateQualityScore(metrics);
+  const grade = getPerformanceGrade(metrics.total_latency_ms);
   
-  // Для development - показываем красиво
-  if (process.env.NODE_ENV === 'development') {
-    console.log('\n📊 Query Metrics:');
-    console.log(`   Query: "${metrics.query.substring(0, 50)}${metrics.query.length > 50 ? '...' : ''}"`);
-    console.log(`   Intent: ${metrics.intent_action} (${(metrics.intent_confidence * 100).toFixed(0)}%)`);
-    console.log(`   Search: ${metrics.search_type} → ${metrics.results_count} results (top: ${(metrics.top_similarity * 100).toFixed(1)}%)`);
-    console.log(`   Performance: ${metrics.total_latency_ms}ms (search: ${metrics.search_latency_ms}ms, LLM: ${metrics.llm_latency_ms}ms)`);
-    console.log(`   Context: ${metrics.context_length} chars, ${metrics.sources_count} sources`);
-    console.log(`   Quality: ${calculateQualityScore(metrics).toFixed(2)}/1.0\n`);
+  // Компактный лог только важных метрик
+  console.log(`[METRICS] ${grade} | ${metrics.intent_action} | sim:${metrics.top_similarity.toFixed(2)} | ${metrics.total_latency_ms}ms | ${metrics.results_count} results | quality:${quality.toFixed(2)}`);
+  
+  // JSON только если есть проблемы
+  if (quality < 0.5 || metrics.total_latency_ms > 5000) {
+    console.warn('[METRICS:LOW_QUALITY]', JSON.stringify(metrics, null, 2));
   }
 }
 
@@ -95,69 +86,7 @@ function getPerformanceGrade(latencyMs: number): string {
   return 'D'; // Медленно
 }
 
-/**
- * Агрегированная статистика за сессию
- */
-class SessionStats {
-  private queries: QueryMetrics[] = [];
-  
-  add(metrics: QueryMetrics) {
-    this.queries.push(metrics);
-  }
-  
-  getStats() {
-    if (this.queries.length === 0) return null;
-    
-    const totalQueries = this.queries.length;
-    const avgLatency = this.queries.reduce((sum, q) => sum + q.total_latency_ms, 0) / totalQueries;
-    const avgSimilarity = this.queries.reduce((sum, q) => sum + q.top_similarity, 0) / totalQueries;
-    const successRate = this.queries.filter(q => q.has_answer).length / totalQueries;
-    
-    return {
-      total_queries: totalQueries,
-      avg_latency_ms: Math.round(avgLatency),
-      avg_similarity: avgSimilarity.toFixed(3),
-      success_rate: (successRate * 100).toFixed(1) + '%',
-      quality_scores: this.queries.map(q => calculateQualityScore(q)),
-      avg_quality: this.queries.reduce((sum, q) => sum + calculateQualityScore(q), 0) / totalQueries
-    };
-  }
-  
-  reset() {
-    this.queries = [];
-  }
-}
-
-export const sessionStats = new SessionStats();
-
-/**
- * Простой rate limiting tracker
- */
-class RateLimiter {
-  private requests: Map<string, number[]> = new Map();
-  
-  check(identifier: string, maxRequests: number, windowMs: number): boolean {
-    const now = Date.now();
-    const userRequests = this.requests.get(identifier) || [];
-    
-    // Удаляем старые запросы за пределами окна
-    const recentRequests = userRequests.filter(time => now - time < windowMs);
-    
-    if (recentRequests.length >= maxRequests) {
-      return false; // Rate limit exceeded
-    }
-    
-    recentRequests.push(now);
-    this.requests.set(identifier, recentRequests);
-    return true;
-  }
-  
-  reset(identifier: string) {
-    this.requests.delete(identifier);
-  }
-}
-
-export const rateLimiter = new RateLimiter();
+// SessionStats и RateLimiter удалены - не нужны для single-user персонального ассистента
 
 /**
  * Alert на аномалии

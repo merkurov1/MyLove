@@ -7,8 +7,8 @@ import Sidebar from '../components/Sidebar'
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'Панель управления AI-ассистентом',
-  description: 'Интерфейс для загрузки и обработки данных в векторную базу данных',
+  title: 'Персональный AI-ассистент',
+  description: 'Интеллектуальный помощник для работы с вашими документами',
 }
 
 export default function RootLayout({

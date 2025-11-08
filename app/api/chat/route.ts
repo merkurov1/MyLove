@@ -115,10 +115,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: error.message, supabase: true }, { status: 500 });
     }
 
-    // RERANKING: Используем LLM для переранжирования результатов
-    // Это улучшает точность на 20-30%
-    if (matches && matches.length > 0 && intent.action === 'qa') {
-      console.log('[RERANKING] Applying fast rerank to improve results...');
+    // RERANKING: Используем LLM для переранжирования результатов ТОЛЬКО для сложных случаев
+    // Экономия бюджета: только если similarity < 0.5 (неуверенный поиск)
+    const shouldRerank = matches && matches.length > 0 && 
+                         intent.action === 'qa' && 
+                         topSimilarity < 0.5;  // Только для сложных запросов
+    
+    if (shouldRerank) {
+      console.log('[RERANKING] Low similarity detected, applying fast rerank...');
       try {
         const reranked = await fastRerank(query, matches, 7);
         if (reranked && reranked.length > 0) {

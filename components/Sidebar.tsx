@@ -14,7 +14,7 @@ export default function Sidebar() {
       </div>
       <nav className="flex-1 p-4 space-y-2">
         <Link href="/" className="flex items-center gap-2 px-3 py-2 rounded hover:bg-blue-700/30 transition"><span>💬</span>Чат</Link>
-        <Link href="/database" className="flex items-center gap-2 px-3 py-2 rounded hover:bg-blue-700/30 transition"><span>📊</span>База данных</Link>
+        <Link href="/database" className="flex items-center gap-2 px-3 py-2 rounded hover:bg-blue-700/30 transition"><span>�</span>Документы</Link>
       </nav>
     </aside>
   );

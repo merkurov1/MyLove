@@ -13,6 +13,7 @@ export default function FileUploader({ sourceId }: FileUploaderProps) {
   const [status, setStatus] = useState<UploadStatus>('idle');
   const [message, setMessage] = useState<string | null>(null);
   const [details, setDetails] = useState<any>(null);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -38,6 +39,7 @@ export default function FileUploader({ sourceId }: FileUploaderProps) {
     setStatus('uploading');
     setMessage('Загрузка файла...');
     setDetails(null);
+    setUploadProgress(0);
     
     const formData = new FormData();
     formData.append("file", file);
@@ -46,14 +48,31 @@ export default function FileUploader({ sourceId }: FileUploaderProps) {
     }
     
     try {
+      // Симуляция прогресса загрузки (0-50%)
+      const uploadInterval = setInterval(() => {
+        setUploadProgress(prev => Math.min(prev + 10, 50));
+      }, 200);
+      
       const res = await fetch("/api/ingest", {
         method: "POST",
         body: formData,
       });
       
+      clearInterval(uploadInterval);
+      setUploadProgress(60);
+      setStatus('processing');
+      setMessage('Обработка файла...');
+      
+      // Симуляция прогресса обработки (60-90%)
+      const processInterval = setInterval(() => {
+        setUploadProgress(prev => Math.min(prev + 5, 90));
+      }, 300);
+      
       const data = await res.json();
+      clearInterval(processInterval);
       
       if (res.ok) {
+        setUploadProgress(100);
         setStatus('success');
         setMessage(`✓ Файл успешно обработан!`);
         setDetails({
@@ -69,17 +88,20 @@ export default function FileUploader({ sourceId }: FileUploaderProps) {
           setStatus('idle');
           setMessage(null);
           setDetails(null);
+          setUploadProgress(0);
           if (inputRef.current) inputRef.current.value = "";
         }, 3000);
       } else {
         setStatus('error');
         setMessage(`✗ Ошибка: ${data.error || 'Неизвестная ошибка'}`);
         setDetails(data);
+        setUploadProgress(0);
         console.error("Upload error:", data);
       }
     } catch (err: any) {
       setStatus('error');
       setMessage(`✗ Ошибка сети: ${err.message}`);
+      setUploadProgress(0);
       console.error("Upload exception:", err);
     }
   };
@@ -157,6 +179,27 @@ export default function FileUploader({ sourceId }: FileUploaderProps) {
         </div>
       </div>
       
+      {/* Progress Bar */}
+      {(status === 'uploading' || status === 'processing') && uploadProgress > 0 && (
+        <div className="mt-4 space-y-2">
+          <div className="flex justify-between text-sm text-gray-600 dark:text-gray-400">
+            <span>{status === 'uploading' ? 'Загрузка...' : 'Обработка...'}</span>
+            <span className="font-semibold">{uploadProgress}%</span>
+          </div>
+          <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden shadow-inner">
+            <div 
+              className="h-full bg-gradient-to-r from-blue-500 to-blue-600 transition-all duration-300 ease-out rounded-full"
+              style={{ width: `${uploadProgress}%` }}
+            />
+          </div>
+          {uploadProgress > 50 && details?.totalChunks && (
+            <div className="text-xs text-gray-500 dark:text-gray-400 text-center">
+              Создание {details.totalChunks} фрагментов для векторного поиска...
+            </div>
+          )}
+        </div>
+      )}
+
       {message && (
         <div className={`mt-4 p-4 rounded-lg border ${
           status === 'success' 
