@@ -1,6 +1,6 @@
 // app/api/conversations/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/utils/supabase/server';
+import { supabase } from '@/utils/supabase/server';
 
 export const runtime = 'nodejs';
 
@@ -10,7 +10,6 @@ export const runtime = 'nodejs';
  */
 export async function GET(request: NextRequest) {
   try {
-    const supabase = createClient();
 
     // Получаем все разговоры, отсортированные по дате обновления
     const { data: conversations, error: convError } = await supabase
@@ -62,8 +61,6 @@ export async function POST(request: NextRequest) {
     if (!conversationId) {
       return NextResponse.json({ error: 'conversationId required' }, { status: 400 });
     }
-
-    const supabase = createClient();
 
     // Получаем информацию о разговоре
     const { data: conversation, error: convError } = await supabase
