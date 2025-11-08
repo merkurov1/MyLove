@@ -30,6 +30,15 @@ export default function PromoPage() {
             Pierrot AI соединяет мощь GPT-4o-mini с точностью векторного поиска.
           </p>
 
+          {/* Hero Image */}
+          <div className="mb-12">
+            <img 
+              src="https://hukfgitwamcwsiyxlhyb.supabase.co/storage/v1/object/public/Img/IMG_0868.jpeg"
+              alt="Pierrot AI - Интеллектуальный анализ текстов"
+              className="w-full max-w-4xl mx-auto rounded-2xl shadow-2xl border border-purple-300/30"
+            />
+          </div>
+
           {/* CTA Button */}
           <Link 
             href="/"
