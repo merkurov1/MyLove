@@ -91,22 +91,40 @@ export async function POST(req: NextRequest) {
     };
 
     // Сохраняем чанки с очисткой контента
-    const chunkRows = chunks.map((content: string, i: number) => {
-      const cleanedContent = cleanTextForPostgres(content);
-      return {
-        document_id: doc.id,
-        chunk_index: i,
-        content: cleanedContent,
-        embedding: embeddings[i],
-        checksum: crypto.createHash('sha256').update(cleanedContent).digest('hex'),
-        metadata: {
-          source_file: file.name,
-          chunk_length: cleanedContent.length,
-          embedding_model: 'text-embedding-3-small',
-          embedding_dimension: embeddings[i].length,
+    const chunkRows = chunks
+      .map((content: string, i: number) => {
+        const cleanedContent = cleanTextForPostgres(content);
+        // КРИТИЧЕСКОЕ: Пропускаем пустые чанки после очистки
+        if (!cleanedContent || cleanedContent.length < 10) {
+          console.warn(`[Ingest] Chunk ${i} is empty after cleaning, skipping`);
+          return null;
         }
-      };
-    });
+        return {
+          document_id: doc.id,
+          chunk_index: i,
+          content: cleanedContent,
+          embedding: embeddings[i],
+          checksum: crypto.createHash('sha256').update(cleanedContent).digest('hex'),
+          metadata: {
+            source_file: file.name,
+            chunk_length: cleanedContent.length,
+            embedding_model: 'text-embedding-3-small',
+            embedding_dimension: embeddings[i].length,
+          }
+        };
+      })
+      .filter((row): row is NonNullable<typeof row> => row !== null);
+
+    if (chunkRows.length === 0) {
+      console.error('[Ingest] All chunks are empty after cleaning!');
+      return NextResponse.json({
+        error: 'Все чанки пусты после очистки. Файл содержит только служебные символы.',
+        originalChunks: chunks.length,
+        cleanedChunks: 0
+      }, { status: 400 });
+    }
+
+    console.log(`[${new Date().toISOString()}] Prepared ${chunkRows.length} chunks for insertion (filtered from ${chunks.length})`);
     
     const { error: chunkError } = await supabase.from('document_chunks').insert(chunkRows);
     if (chunkError) {
@@ -124,7 +142,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ 
       success: true, 
       document_id: doc.id, 
-      totalChunks: chunks.length,
+      totalChunks: chunkRows.length,
+      originalChunks: chunks.length,
       embeddingModel: 'text-embedding-3-small',
       embeddingDimension: 1536
     });

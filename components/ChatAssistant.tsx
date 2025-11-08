@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { FaUser, FaRobot, FaPaperPlane, FaCircleExclamation, FaDatabase, FaClockRotateLeft, FaPlus, FaXmark, FaComments } from "react-icons/fa6";
+import { FaUser, FaRobot, FaPaperPlane, FaCircleExclamation, FaClockRotateLeft, FaPlus, FaXmark, FaComments } from "react-icons/fa6";
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
