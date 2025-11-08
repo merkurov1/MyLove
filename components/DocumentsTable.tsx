@@ -3,11 +3,12 @@ import { useEffect, useState } from 'react'
 
 interface Doc {
   id: string
-  content: string
-  metadata: any
+  title: string
+  description?: string
+  source_url?: string
   created_at: string
   source_id: string
-  embedding_provider: string
+  document_chunks: Array<{ id: string; content: string; chunk_index: number }>
   source_name?: string // for UI only, not from DB
 }
 
@@ -109,8 +110,16 @@ export default function DocumentsTable() {
           <tbody className="bg-white divide-y divide-gray-100">
             {docs.map(doc => (
               <tr key={doc.id} className="hover:bg-blue-50 transition">
-                <td className="px-2 sm:px-4 py-2 max-w-xs truncate text-gray-900">{doc.content.slice(0, 120)}...</td>
-                <td className="px-2 sm:px-4 py-2 text-xs text-gray-500">{doc.source_name} <br /> <span className="text-gray-400">{doc.metadata?.filename || doc.metadata?.url || '—'}</span></td>
+                <td className="px-2 sm:px-4 py-2 max-w-xs truncate text-gray-900">
+                  <div className="font-medium">{doc.title || 'Без названия'}</div>
+                  <div className="text-xs text-gray-500">{doc.document_chunks?.length || 0} чанков</div>
+                </td>
+                <td className="px-2 sm:px-4 py-2 text-xs text-gray-500">
+                  {doc.source_name} 
+                  {doc.source_url && (
+                    <><br /><span className="text-gray-400 truncate block max-w-[200px]">{doc.source_url}</span></>
+                  )}
+                </td>
                 <td className="px-2 sm:px-4 py-2 text-xs text-gray-400">{doc.created_at?.slice(0, 19).replace('T', ' ')}</td>
                 <td className="px-2 sm:px-4 py-2">
                   <button
