@@ -22,17 +22,29 @@ CREATE INDEX documents_source_id_idx ON documents(source_id);
 CREATE INDEX documents_created_at_idx ON documents(created_at DESC);
 
 -- ==========================================
--- 1.5. СОЗДАТЬ ТАБЛИЦЫ ДЛЯ ИСТОРИИ ЧАТОВ
+-- 1.5. СОЗДАТЬ/ОБНОВИТЬ ТАБЛИЦЫ ДЛЯ ИСТОРИИ ЧАТОВ
 -- ==========================================
 
+-- Создаём conversations если не существует
 CREATE TABLE IF NOT EXISTS conversations (
   id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
   user_id uuid,
   title text,
-  created_at timestamptz DEFAULT now(),
-  updated_at timestamptz DEFAULT now()
+  created_at timestamptz DEFAULT now()
 );
 
+-- Добавляем updated_at если её нет (безопасно)
+DO $$ 
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_name = 'conversations' AND column_name = 'updated_at'
+  ) THEN
+    ALTER TABLE conversations ADD COLUMN updated_at timestamptz DEFAULT now();
+  END IF;
+END $$;
+
+-- Создаём messages если не существует
 CREATE TABLE IF NOT EXISTS messages (
   id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
   conversation_id uuid REFERENCES conversations(id) ON DELETE CASCADE,
@@ -42,6 +54,7 @@ CREATE TABLE IF NOT EXISTS messages (
   created_at timestamptz DEFAULT now()
 );
 
+-- Создаём индексы если не существуют
 CREATE INDEX IF NOT EXISTS messages_conversation_id_idx ON messages(conversation_id);
 CREATE INDEX IF NOT EXISTS conversations_updated_at_idx ON conversations(updated_at DESC);
 
