@@ -39,12 +39,38 @@ export async function POST(req: NextRequest) {
     const intent = detectIntent(query);
     console.log(`[${new Date().toISOString()}] Detected intent:`, intent);
 
-    // 1. Получить embedding для запроса через Vercel AI SDK
+    // 1. Query expansion для улучшения поиска
+    let expandedQuery = query;
+    const lowerQuery = query.toLowerCase();
+    
+    // Если запрос о "Новой Газете" + "колонки" - расширяем контекст
+    const mentionsNovajaGazeta = 
+      lowerQuery.includes('новой газет') ||
+      lowerQuery.includes('новая газет') ||
+      lowerQuery.includes('нов. газет');
+    
+    const mentionsColumns = 
+      lowerQuery.includes('колонк') ||
+      lowerQuery.includes('статьях') ||
+      lowerQuery.includes('публикац');
+      
+    const mentionsProfile = 
+      lowerQuery.includes('профайл') ||
+      lowerQuery.includes('психолингв') ||
+      lowerQuery.includes('анализ автор');
+    
+    // Если это запрос о профайлинге АВТОРА колонок, добавляем контекст
+    if (mentionsNovajaGazeta && (mentionsColumns || mentionsProfile)) {
+      expandedQuery = query + ' Новая Газета колонка журналистика публикация медиа';
+      console.log('[QUERY EXPANSION] Expanded for Novaya Gazeta columns:', expandedQuery);
+    }
+
+    // 2. Получить embedding для расширенного запроса через Vercel AI SDK
     const searchStartTime = Date.now();
     console.log(`[${new Date().toISOString()}] Generating query embedding with OpenAI...`);
     let queryEmbedding: number[];
     try {
-      queryEmbedding = await getEmbedding(query);
+      queryEmbedding = await getEmbedding(expandedQuery);
       console.log(`[${new Date().toISOString()}] Query embedding generated (dimension: ${queryEmbedding.length})`);
     } catch (embedErr: any) {
       console.error('[EMBEDDING ERROR]', {
@@ -57,7 +83,7 @@ export async function POST(req: NextRequest) {
       }, { status: 500 });
     }
 
-    // 2. Найти релевантные документы через Supabase
+    // 3. Найти релевантные документы через Supabase
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL,
       process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -66,13 +92,15 @@ export async function POST(req: NextRequest) {
     // Используем гибридный поиск (keyword + vector) для лучшей точности
     let matchCount = 7;
     
-    // Пробуем гибридный поиск сначала
+    // Для гибридного поиска используем ОБА запроса:
+    // - query (original) для keyword matching (точные совпадения "Новая Газета")
+    // - expandedQuery embedding для semantic matching (расширенный контекст)
     let { data: matches, error } = await supabase.rpc('hybrid_search', {
-      query_text: query,
-      query_embedding: queryEmbedding,
+      query_text: query,  // Оригинал для keyword matching
+      query_embedding: queryEmbedding,  // Расширенный для semantic
       match_count: matchCount,
-      keyword_weight: 0.3,
-      semantic_weight: 0.7
+      keyword_weight: 0.4,  // Увеличили вес keywords для "Новая Газета"
+      semantic_weight: 0.6
     });
     
     // Fallback на обычный векторный если гибридный недоступен

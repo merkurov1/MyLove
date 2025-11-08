@@ -47,17 +47,23 @@ export function detectIntent(query: string): AgentIntent {
   ) {
     const isLatest = 
       lowerQuery.includes('последн') || 
-      lowerQuery.includes('новый') ||
       lowerQuery.includes('свежий')
     
+    // ВАЖНО: "новый" может означать "Новая Газета", а не "новый документ"
+    const mentionsNovajaGazeta = 
+      lowerQuery.includes('новой газет') ||
+      lowerQuery.includes('новая газет') ||
+      lowerQuery.includes('нов. газет')
+    
     const isAll = 
-      lowerQuery.includes('все') ||
+      (lowerQuery.includes('все') ||
       lowerQuery.includes('всех') ||
-      lowerQuery.includes('каждую')
+      lowerQuery.includes('каждую')) &&
+      !mentionsNovajaGazeta  // Если упоминается Новая Газета, это не "все документы"
     
     return {
       action: 'analyze',
-      target: isLatest ? 'latest' : isAll ? 'all' : 'latest',
+      target: isLatest ? 'latest' : isAll ? 'all' : (mentionsNovajaGazeta ? 'all' : 'latest'),
       confidence: 0.95  // Высокая уверенность для специализированных запросов
     }
   }
