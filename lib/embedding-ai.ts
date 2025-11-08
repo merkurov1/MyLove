@@ -23,41 +23,61 @@ function estimateTokens(text: string): number {
 }
 
 /**
+ * КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Принудительно режем текст если больше лимита
+ */
+function forceChunkText(text: string, maxTokens: number): string[] {
+  const maxChars = maxTokens * 4; // ~4 chars per token
+  const chunks: string[] = [];
+  
+  for (let i = 0; i < text.length; i += maxChars) {
+    chunks.push(text.slice(i, i + maxChars));
+  }
+  
+  console.log(`[forceChunkText] Split ${text.length} chars into ${chunks.length} chunks of ~${maxTokens} tokens`);
+  return chunks;
+}
+
+/**
  * Generate multiple embeddings with smart batching based on actual token count
  * OpenAI embedding API has a limit of 8192 tokens per request
- * We target max 6000 tokens per batch to leave safety margin
+ * We target max 2000 tokens per text to be safe (single text limit)
+ * And max 6000 tokens per batch (multiple texts)
  */
 export async function getEmbeddings(texts: string[]): Promise<number[][]> {
-  const MAX_TOKENS_PER_BATCH = 6000;
+  const MAX_TOKENS_PER_TEXT = 2000;  // КРИТИЧЕСКОЕ: Лимит для ОДНОГО текста
+  const MAX_TOKENS_PER_BATCH = 6000; // Лимит для батча из нескольких текстов
   const allEmbeddings: number[][] = [];
   
   console.log(`[getEmbeddings] Processing ${texts.length} texts with smart batching`);
   
-  let currentBatch: string[] = [];
-  let currentTokens = 0;
-  let batchNum = 1;
-  
+  // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Сначала проверяем каждый текст на размер
+  const safeTexts: string[] = [];
   for (let i = 0; i < texts.length; i++) {
     const text = texts[i];
     const textTokens = estimateTokens(text);
     
-    // Если один текст больше лимита - отправляем его отдельно
-    if (textTokens > MAX_TOKENS_PER_BATCH) {
-      console.warn(`[getEmbeddings] Text ${i + 1} is very large (${textTokens} tokens), processing separately`);
-      
-      // Сначала обработаем текущий batch если есть
-      if (currentBatch.length > 0) {
-        await processBatch(currentBatch, batchNum++, allEmbeddings);
-        currentBatch = [];
-        currentTokens = 0;
-      }
-      
-      // Обработаем большой текст отдельно
-      await processBatch([text], batchNum++, allEmbeddings);
-      continue;
+    if (textTokens > MAX_TOKENS_PER_TEXT) {
+      console.warn(`[getEmbeddings] Text ${i + 1} is too large (${textTokens} tokens > ${MAX_TOKENS_PER_TEXT}), force splitting`);
+      // Принудительно режем на куски по MAX_TOKENS_PER_TEXT
+      const pieces = forceChunkText(text, MAX_TOKENS_PER_TEXT);
+      safeTexts.push(...pieces);
+    } else {
+      safeTexts.push(text);
     }
+  }
+  
+  console.log(`[getEmbeddings] After safety check: ${safeTexts.length} texts (was ${texts.length})`);
+  
+  // Теперь батчим безопасные тексты
+  let currentBatch: string[] = [];
+  let currentTokens = 0;
+  let batchNum = 1;
+  
+  for (let i = 0; i < safeTexts.length; i++) {
+    const text = safeTexts[i];
+    const textTokens = estimateTokens(text);
     
-    // Если добавление текста превысит лимит - отправим текущий batch
+    // Если добавление текста превысит лимит батча - отправим текущий batch
     if (currentTokens + textTokens > MAX_TOKENS_PER_BATCH && currentBatch.length > 0) {
       await processBatch(currentBatch, batchNum++, allEmbeddings);
       currentBatch = [];
@@ -94,12 +114,22 @@ async function processBatch(batch: string[], batchNum: number, results: number[]
   } catch (error: any) {
     console.error(`[getEmbeddings] Batch ${batchNum} failed:`, error.message);
     
-    // Если batch всё равно слишком большой - попробуем разделить пополам
+    // Если batch слишком большой и содержит несколько текстов - делим пополам
     if (error.message.includes('maximum context length') && batch.length > 1) {
       console.log(`[getEmbeddings] Splitting batch ${batchNum} in half and retrying...`);
       const mid = Math.floor(batch.length / 2);
       await processBatch(batch.slice(0, mid), batchNum, results);
       await processBatch(batch.slice(mid), batchNum, results);
+      return;
+    }
+    
+    // Если это один текст и он всё равно слишком большой - режем принудительно
+    if (error.message.includes('maximum context length') && batch.length === 1) {
+      console.error(`[getEmbeddings] Single text still too large, force chunking...`);
+      const pieces = forceChunkText(batch[0], 2000);
+      for (const piece of pieces) {
+        await processBatch([piece], batchNum, results);
+      }
       return;
     }
     

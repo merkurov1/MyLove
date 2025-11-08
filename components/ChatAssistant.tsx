@@ -2,6 +2,8 @@
 
 import { useState, useRef, useEffect } from "react";
 import { FaUser, FaRobot, FaPaperPlane, FaCircleExclamation, FaDatabase } from "react-icons/fa6";
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 interface Message {
   role: "user" | "assistant" | "error";
@@ -159,14 +161,24 @@ export default function ChatAssistant() {
                         : "bg-white/90 dark:bg-gray-800/90 text-gray-900 dark:text-gray-100 rounded-bl-3xl animate-fade-in-left border border-gray-200 dark:border-gray-700"
                     }`}
                   >
-                    <div className="whitespace-pre-line">{msg.content}</div>
+                    {msg.role === "user" ? (
+                      <div className="whitespace-pre-line">{msg.content}</div>
+                    ) : (
+                      <div className="prose prose-sm dark:prose-invert max-w-none prose-headings:mt-3 prose-headings:mb-2 prose-p:my-2 prose-ul:my-2 prose-ol:my-2 prose-li:my-1 prose-pre:my-2 prose-pre:bg-gray-100 dark:prose-pre:bg-gray-900 prose-code:text-blue-600 dark:prose-code:text-blue-400 prose-code:bg-gray-100 dark:prose-code:bg-gray-800 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-a:text-blue-600 dark:prose-a:text-blue-400 prose-strong:text-gray-900 dark:prose-strong:text-gray-100">
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                          {msg.content}
+                        </ReactMarkdown>
+                      </div>
+                    )}
                     {msg.sources && (
                       <div className="border-t border-gray-200 dark:border-gray-600 pt-3 mt-4">
                         <div className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2 font-semibold">
                           📚 Источники:
                         </div>
-                        <div className="text-sm text-gray-600 dark:text-gray-400 whitespace-pre-line leading-relaxed">
-                          {msg.sources}
+                        <div className="prose prose-xs dark:prose-invert max-w-none text-gray-600 dark:text-gray-400 prose-p:my-1 prose-ul:my-1 prose-li:my-0.5 prose-code:text-xs">
+                          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                            {msg.sources}
+                          </ReactMarkdown>
                         </div>
                       </div>
                     )}

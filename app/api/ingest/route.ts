@@ -25,13 +25,14 @@ export async function POST(req: NextRequest) {
 
   console.log(`[${new Date().toISOString()}] File read, size: ${text.length} chars`);
 
-  // Чанкуем текст
-  const chunks: string[] = splitIntoChunks(text);
+  // КРИТИЧЕСКОЕ: Чанкуем с явным ограничением 2000 символов = ~500 токенов
+  // OpenAI embedding limit: 8192 tokens, но мы ограничиваем чанк до 2000 для безопасности
+  const chunks: string[] = splitIntoChunks(text, 2000, 200);
   if (!chunks.length) {
     return NextResponse.json({ error: 'Не удалось разбить текст на чанки' }, { status: 400 });
   }
 
-  console.log(`[${new Date().toISOString()}] Text chunked into ${chunks.length} chunks`);
+  console.log(`[${new Date().toISOString()}] Text chunked into ${chunks.length} chunks (max 2000 chars each)`);
 
   try {
     // Получаем эмбеддинги для чанков через Vercel AI SDK
