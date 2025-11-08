@@ -211,12 +211,13 @@ export function formatResponseWithSources(
 ): string {
   if (!sources || sources.length === 0) return reply
   
-  let formatted = reply + '\n\n---\n\n**📚 Источники:**\n\n'
+  let formatted = reply + '\n\n━━━━━━━━━━━━━━━━━━━━\n\n📚 ИСТОЧНИКИ:\n\n'
   
   sources.forEach((source, i) => {
-    formatted += `${i + 1}. **${source.documentTitle}**\n`
-    formatted += `   💬 _"${source.quote.substring(0, 150)}${source.quote.length > 150 ? '...' : ''}"_\n`
-    formatted += `   🎯 Релевантность: ${(source.similarity * 100).toFixed(0)}%\n\n`
+    const relevance = (source.similarity * 100).toFixed(0)
+    formatted += `${i + 1}. ${source.documentTitle}\n`
+    formatted += `   "${source.quote.substring(0, 120)}${source.quote.length > 120 ? '...' : ''}"\n`
+    formatted += `   Релевантность: ${relevance}%\n\n`
   })
   
   return formatted

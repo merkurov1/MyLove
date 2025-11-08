@@ -14,11 +14,12 @@ export async function POST(req: NextRequest) {
   console.log('[ENV CHECK] NEXT_PUBLIC_SUPABASE_ANON_KEY:', !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 
   try {
-    const { query, sourceId } = await req.json();
+    const { query, sourceId, conversationId } = await req.json();
     console.log(`[${new Date().toISOString()}] Chat API called with:`, {
       query: query?.substring(0, 100),
       queryLength: query?.length,
-      sourceId
+      sourceId,
+      conversationId
     });
 
     if (!query || typeof query !== 'string') {
@@ -58,14 +59,28 @@ export async function POST(req: NextRequest) {
       process.env.SUPABASE_SERVICE_ROLE_KEY
     );
 
-    // Начинаем с 5 чанков, если similarity низкий - возьмем больше
-    let matchCount = 5;
-    const { data: matches, error } = await supabase.rpc('match_documents', {
+    // Используем гибридный поиск (keyword + vector) для лучшей точности
+    let matchCount = 7;
+    
+    // Пробуем гибридный поиск сначала
+    let { data: matches, error } = await supabase.rpc('hybrid_search', {
+      query_text: query,
       query_embedding: queryEmbedding,
-      match_count: matchCount
+      match_count: matchCount,
+      keyword_weight: 0.3,
+      semantic_weight: 0.7
     });
+    
+    // Fallback на обычный векторный если гибридный недоступен
+    if (error && error.message?.includes('function hybrid_search')) {
+      console.log('[SEARCH] Hybrid search not available, falling back to vector-only');
+      ({ data: matches, error } = await supabase.rpc('match_documents', {
+        query_embedding: queryEmbedding,
+        match_count: matchCount
+      }));
+    }
 
-    console.log(`[${new Date().toISOString()}] RPC match_documents called`);
+    console.log(`[${new Date().toISOString()}] Search completed (hybrid)`);
     const topSimilarity = matches?.[0]?.similarity || 0;
     console.log('[RPC RESULT]', { 
       matchesCount: matches?.length || 0, 
@@ -280,13 +295,48 @@ export async function POST(req: NextRequest) {
     // Форматируем ответ с цитатами
     const formattedReply = formatResponseWithSources(answer, sources);
     
-    // Сохраняем разговор (пока без conversationId, добавим позже)
-    // TODO: Implement conversation persistence
+    // Сохраняем диалог в базу
+    let currentConversationId = conversationId;
+    
+    if (!currentConversationId) {
+      // Создаем новую conversation
+      const { data: newConv } = await supabase
+        .from('conversations')
+        .insert({ 
+          title: query.substring(0, 100),
+          created_at: new Date().toISOString()
+        })
+        .select('id')
+        .single();
+      
+      currentConversationId = newConv?.id;
+    }
+    
+    // Сохраняем сообщения
+    if (currentConversationId) {
+      await supabase.from('messages').insert([
+        {
+          conversation_id: currentConversationId,
+          role: 'user',
+          content: query,
+          created_at: new Date().toISOString()
+        },
+        {
+          conversation_id: currentConversationId,
+          role: 'assistant',
+          content: formattedReply,
+          created_at: new Date().toISOString()
+        }
+      ]);
+      
+      console.log('[CONVERSATION] Saved to DB:', currentConversationId);
+    }
     
     return NextResponse.json({ 
       reply: formattedReply,
       sources,
-      intent: intent.action
+      intent: intent.action,
+      conversationId: currentConversationId
     });
 
   } catch (err: any) {
