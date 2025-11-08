@@ -18,12 +18,20 @@ export async function POST(req: NextRequest) {
   }
 
   const arrayBuffer = await file.arrayBuffer();
-  const text = Buffer.from(arrayBuffer).toString('utf-8');
-  if (!text.trim()) {
+  let text = Buffer.from(arrayBuffer).toString('utf-8');
+  
+  // КРИТИЧЕСКОЕ: Удаляем нулевые байты и другие проблемные Unicode символы
+  // PostgreSQL не поддерживает \u0000 в text полях
+  text = text
+    .replace(/\u0000/g, '') // Удаляем null bytes
+    .replace(/[\uFFFE\uFFFF]/g, '') // Удаляем invalid Unicode
+    .trim();
+  
+  if (!text) {
     return NextResponse.json({ error: 'Файл пустой или не удалось прочитать текст' }, { status: 400 });
   }
 
-  console.log(`[${new Date().toISOString()}] File read, size: ${text.length} chars`);
+  console.log(`[${new Date().toISOString()}] File read, size: ${text.length} chars (cleaned)`);
 
   // КРИТИЧЕСКОЕ: Чанкуем с явным ограничением 2000 символов = ~500 токенов
   // OpenAI embedding limit: 8192 tokens, но мы ограничиваем чанк до 2000 для безопасности
@@ -73,20 +81,32 @@ export async function POST(req: NextRequest) {
 
     console.log(`[${new Date().toISOString()}] Document created: ${doc.id}`);
 
-    // Сохраняем чанки
-    const chunkRows = chunks.map((content: string, i: number) => ({
-      document_id: doc.id,
-      chunk_index: i,
-      content,
-      embedding: embeddings[i],
-      checksum: crypto.createHash('sha256').update(content).digest('hex'),
-      metadata: {
-        source_file: file.name,
-        chunk_length: content.length,
-        embedding_model: 'text-embedding-3-small',
-        embedding_dimension: embeddings[i].length,
-      }
-    }));
+    // Функция очистки текста от проблемных символов для PostgreSQL
+    const cleanTextForPostgres = (text: string): string => {
+      return text
+        .replace(/\u0000/g, '') // null bytes
+        .replace(/[\uFFFE\uFFFF]/g, '') // invalid Unicode
+        .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '') // control characters (кроме \n \r \t)
+        .trim();
+    };
+
+    // Сохраняем чанки с очисткой контента
+    const chunkRows = chunks.map((content: string, i: number) => {
+      const cleanedContent = cleanTextForPostgres(content);
+      return {
+        document_id: doc.id,
+        chunk_index: i,
+        content: cleanedContent,
+        embedding: embeddings[i],
+        checksum: crypto.createHash('sha256').update(cleanedContent).digest('hex'),
+        metadata: {
+          source_file: file.name,
+          chunk_length: cleanedContent.length,
+          embedding_model: 'text-embedding-3-small',
+          embedding_dimension: embeddings[i].length,
+        }
+      };
+    });
     
     const { error: chunkError } = await supabase.from('document_chunks').insert(chunkRows);
     if (chunkError) {
