@@ -48,8 +48,7 @@ export function detectIntent(query: string): AgentIntent {
     const isLatest = 
       lowerQuery.includes('последн') || 
       lowerQuery.includes('новый') ||
-      lowerQuery.includes('свежий') ||
-      lowerQuery.includes('колонк')
+      lowerQuery.includes('свежий')
     
     const isAll = 
       lowerQuery.includes('все') ||

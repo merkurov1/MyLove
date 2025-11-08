@@ -9,12 +9,12 @@
 -- Удаляем старый индекс
 DROP INDEX IF EXISTS document_chunks_embedding_idx;
 
--- Создаём новый индекс с актуальными данными
--- lists = 100 подходит для ~1000-10000 векторов
--- У нас сейчас ~200 векторов, но оставим запас
+-- Используем HNSW вместо IVFFlat - более экономичен по памяти
+-- m = 16 (connections per layer), ef_construction = 64 (quality vs speed)
+-- HNSW не требует много maintenance_work_mem и работает лучше на малых датасетах
 CREATE INDEX document_chunks_embedding_idx ON document_chunks 
-  USING ivfflat (embedding vector_cosine_ops)
-  WITH (lists = 100);
+  USING hnsw (embedding vector_cosine_ops)
+  WITH (m = 16, ef_construction = 64);
 
 -- Проверка: должно вернуть индекс
 SELECT 
@@ -26,9 +26,7 @@ FROM pg_indexes
 WHERE tablename = 'document_chunks' 
   AND indexname = 'document_chunks_embedding_idx';
 
--- Тест: проверить что индекс используется
-EXPLAIN (ANALYZE, BUFFERS) 
-SELECT id, content, 1 - (embedding <=> '[0.1, 0.2]'::vector) as similarity
-FROM document_chunks
-ORDER BY embedding <=> '[0.1, 0.2]'::vector
-LIMIT 5;
+-- Тест: проверить количество векторов в индексе
+SELECT COUNT(*) as total_chunks, 
+       COUNT(CASE WHEN embedding IS NOT NULL THEN 1 END) as chunks_with_embeddings
+FROM document_chunks;
