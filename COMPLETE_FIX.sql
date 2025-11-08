@@ -22,6 +22,30 @@ CREATE INDEX documents_source_id_idx ON documents(source_id);
 CREATE INDEX documents_created_at_idx ON documents(created_at DESC);
 
 -- ==========================================
+-- 1.5. СОЗДАТЬ ТАБЛИЦЫ ДЛЯ ИСТОРИИ ЧАТОВ
+-- ==========================================
+
+CREATE TABLE IF NOT EXISTS conversations (
+  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id uuid,
+  title text,
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS messages (
+  id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+  conversation_id uuid REFERENCES conversations(id) ON DELETE CASCADE,
+  role text NOT NULL,
+  content text NOT NULL,
+  metadata jsonb DEFAULT '{}',
+  created_at timestamptz DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS messages_conversation_id_idx ON messages(conversation_id);
+CREATE INDEX IF NOT EXISTS conversations_updated_at_idx ON conversations(updated_at DESC);
+
+-- ==========================================
 -- 2. ПЕРЕСОЗДАТЬ ТАБЛИЦУ document_chunks
 -- ==========================================
 -- Проблема: embeddings 384d вместо 1536d

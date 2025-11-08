@@ -348,9 +348,16 @@ export async function POST(req: NextRequest) {
           conversation_id: currentConversationId,
           role: 'assistant',
           content: formattedReply,
+          metadata: { sources: formattedReply.includes('━━━━━') ? 'included' : 'none' },
           created_at: new Date().toISOString()
         }
       ]);
+      
+      // Обновляем updated_at в conversations
+      await supabase
+        .from('conversations')
+        .update({ updated_at: new Date().toISOString() })
+        .eq('id', currentConversationId);
       
       console.log('[CONVERSATION] Saved to DB:', currentConversationId);
     }
