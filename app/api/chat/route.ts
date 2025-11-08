@@ -153,7 +153,8 @@ export async function POST(req: NextRequest) {
       if (sourceId) {
         filteredMatches = filteredMatches.filter((doc: any) => doc.source_id === sourceId);
       }
-      contextText = filteredMatches.map((doc: any) => doc.content).join('\n---\n').substring(0, 3000);
+      // Увеличили лимит с 3000 до 6000 для лучших ответов на простые вопросы
+      contextText = filteredMatches.map((doc: any) => doc.content).join('\n---\n').substring(0, 6000);
     }
     
     console.log('[CONTEXT]', { 

@@ -76,9 +76,13 @@ export function detectIntent(query: string): AgentIntent {
     lowerQuery.includes('кратко') ||
     lowerQuery.includes('резюм') ||
     lowerQuery.includes('суть') ||
-    lowerQuery.includes('главное')
+    lowerQuery.includes('главное') ||
+    (lowerQuery.includes('о чем') || lowerQuery.includes('о ком')) // "о чем последняя колонка?"
   ) {
-    const isLatest = lowerQuery.includes('последн')
+    const isLatest = 
+      lowerQuery.includes('последн') || 
+      lowerQuery.includes('новый') ||
+      lowerQuery.includes('свежий')
     return {
       action: 'summarize',
       target: isLatest ? 'latest' : 'all',
