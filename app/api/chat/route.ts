@@ -1,22 +1,23 @@
 // app/api/chat/route.ts
 
 import { NextRequest, NextResponse } from 'next/server';
-import { getEmbedding } from '@/lib/embedding';
+import { getEmbedding } from '@/lib/embedding-ai';
 import { createClient } from '@supabase/supabase-js';
 
-export const runtime = 'edge'; // Рекомендуется для Vercel для лучшей производительности
+export const runtime = 'nodejs'; // Changed from edge to support OpenAI SDK
 
 export async function POST(req: NextRequest) {
   console.log(`[${new Date().toISOString()}] Chat API request started`);
-  console.log('[ENV CHECK] HF_API_KEY:', !!process.env.HF_API_KEY);
+  console.log('[ENV CHECK] OPENAI_API_KEY:', !!process.env.OPENAI_API_KEY);
   console.log('[ENV CHECK] NEXT_PUBLIC_SUPABASE_URL:', !!process.env.NEXT_PUBLIC_SUPABASE_URL);
   console.log('[ENV CHECK] NEXT_PUBLIC_SUPABASE_ANON_KEY:', !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 
   try {
-  const { query, sourceId, embeddingModel, embeddingBackend } = await req.json();
+    const { query, sourceId } = await req.json();
     console.log(`[${new Date().toISOString()}] Chat API called with:`, {
       query: query?.substring(0, 100),
-      queryLength: query?.length
+      queryLength: query?.length,
+      sourceId
     });
 
     if (!query || typeof query !== 'string') {
@@ -29,14 +30,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Supabase не настроен' }, { status: 500 });
     }
 
-    // 1. Получить embedding для запроса
-    console.log(`[${new Date().toISOString()}] Starting embedding request...`);
+    // 1. Получить embedding для запроса через Vercel AI SDK
+    console.log(`[${new Date().toISOString()}] Generating query embedding with OpenAI...`);
     let queryEmbedding: number[];
     try {
-      queryEmbedding = await getEmbedding(query, {
-        backend: embeddingBackend,
-        model: embeddingModel,
-      });
+      queryEmbedding = await getEmbedding(query);
+      console.log(`[${new Date().toISOString()}] Query embedding generated (dimension: ${queryEmbedding.length})`);
     } catch (embedErr: any) {
       console.error('[EMBEDDING ERROR]', {
         error: embedErr?.message,
