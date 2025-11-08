@@ -2,11 +2,13 @@
 import { ToastProvider } from './ToastContext'
 import ThemeToggle from './ThemeToggle'
 import PasswordProtection from './PasswordProtection'
+import ErrorBoundary from './ErrorBoundary'
 
 export default function ClientProviders({ children }: { children: React.ReactNode }) {
   return (
-    <ToastProvider>
-      <PasswordProtection>
+    <ErrorBoundary>
+      <ToastProvider>
+        <PasswordProtection>
         <div className="min-h-screen flex flex-col">
           <header className="bg-white dark:bg-gray-950 shadow sticky top-0 z-20">
             <nav className="max-w-5xl mx-auto flex items-center justify-between px-4 py-3">
@@ -26,5 +28,6 @@ export default function ClientProviders({ children }: { children: React.ReactNod
         </div>
       </PasswordProtection>
     </ToastProvider>
+    </ErrorBoundary>
   )
 }

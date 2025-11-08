@@ -21,6 +21,10 @@ export default function StatsPanel() {
     fetch("/api/stats")
       .then((res) => res.json())
       .then(setStats)
+      .catch((err) => {
+        console.error('Failed to load stats:', err)
+        setStats(null)
+      })
       .finally(() => setLoading(false));
   }, []);
 
