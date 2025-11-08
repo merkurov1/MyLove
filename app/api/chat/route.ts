@@ -169,16 +169,50 @@ export async function POST(req: NextRequest) {
     let contextText = '';
     let filteredMatches = matches || [];
     
+    // ФИЛЬТРАЦИЯ: Если запрос о "Новой Газете", фильтруем результаты по source_url
+    if (mentionsNovajaGazeta && filteredMatches.length > 0) {
+      console.log('[FILTER] Query mentions Novaya Gazeta, filtering by source_url...');
+      const beforeCount = filteredMatches.length;
+      
+      // Получаем source_url для каждого чанка через document_id
+      const documentIds = Array.from(new Set(filteredMatches.map((m: any) => m.document_id).filter(Boolean)));
+      if (documentIds.length > 0) {
+        const { data: docs } = await supabase
+          .from('documents')
+          .select('id, source_url')
+          .in('id', documentIds);
+        
+        const docMap = new Map(docs?.map((d: any) => [d.id, d.source_url]) || []);
+        
+        // Фильтруем только чанки из документов Новой Газеты
+        filteredMatches = filteredMatches.filter((m: any) => {
+          const sourceUrl = docMap.get(m.document_id);
+          return sourceUrl && sourceUrl.includes('novayagazeta');
+        });
+        
+        console.log(`[FILTER] Filtered from ${beforeCount} to ${filteredMatches.length} chunks (Novaya Gazeta only)`);
+      }
+    }
+    
     // Специальная обработка для analyze/summarize ALL documents
     if ((intent.action === 'analyze' || intent.action === 'compare') && intent.target === 'all') {
       console.log('[AGENT] Loading ALL documents for multi-document analysis...');
       
-      // Получаем все документы
-      const { data: allDocs } = await supabase
+      // Получаем все или отфильтрованные документы
+      let docsQuery = supabase
         .from('documents')
-        .select('id, title, created_at')
-        .order('created_at', { ascending: false })
-        .limit(10); // Ограничиваем 10 документами
+        .select('id, title, created_at, source_url')
+        .order('created_at', { ascending: false });
+      
+      // Если запрос о Новой Газете - берём только документы из НГ
+      if (mentionsNovajaGazeta) {
+        console.log('[AGENT] Filtering documents by Novaya Gazeta source...');
+        docsQuery = docsQuery.ilike('source_url', '%novayagazeta%');
+      }
+      
+      docsQuery = docsQuery.limit(10); // Ограничиваем 10 документами
+      
+      const { data: allDocs } = await docsQuery;
       
       if (allDocs && allDocs.length > 0) {
         console.log('[AGENT] Found documents:', allDocs.length);
