@@ -437,20 +437,32 @@ export async function POST(req: NextRequest) {
     const estimatedQueryTokens = Math.ceil(query.length / 4);
     const usedTokens = estimatedContextTokens + estimatedPromptTokens + estimatedQueryTokens + 500; // +500 буфер
     
-    const maxContextWindow = 128000; // gpt-4o-mini limit
-    const availableTokens = maxContextWindow - usedTokens;
+    const maxContextWindow = 128000; // gpt-4o-mini context window
+    
+    // CRITICAL: Если контекст слишком большой, обрезаем его
+    if (usedTokens > maxContextWindow * 0.9) { // 90% от лимита
+      const maxContextLength = Math.floor((maxContextWindow * 0.8 - estimatedPromptTokens - estimatedQueryTokens - 500) * 4);
+      contextText = contextText.substring(0, maxContextLength);
+      console.log('[CONTEXT TRUNCATED]', { 
+        originalLength: contextText.length, 
+        truncatedTo: maxContextLength,
+        estimatedTokens: Math.ceil(contextText.length / 4)
+      });
+    }
+    
+    // Пересчитываем токены после возможной обрезки
+    const finalEstimatedContextTokens = Math.ceil(contextText.length / 4);
+    const finalUsedTokens = finalEstimatedContextTokens + estimatedPromptTokens + estimatedQueryTokens + 500;
+    const availableTokens = maxContextWindow - finalUsedTokens;
     
     // Базовые лимиты по типу задачи
     const baseMaxTokens = isAnalytical ? 3000 : (intent.action === 'summarize' ? 800 : 1500);
     // Но не больше доступного в context window
     const maxTokens = Math.min(baseMaxTokens, Math.max(500, availableTokens));
     
-    // GPT-4o для глубокого анализа (x10 стоимость, +40% качество)
-    // Для остальных задач - 4o-mini
-    // promptKey может быть 'multi_analyze' (не в типе AgentAction)
-    const modelName = (intent.action === 'analyze' || promptKey === 'multi_analyze') 
-      ? 'gpt-4o' 
-      : 'gpt-4o-mini';
+    // GPT-4o-mini для всех задач (экономия бюджета, достаточное качество)
+    // gpt-4o только в исключительных случаях
+    const modelName = 'gpt-4o-mini';
     
     console.log('[GENERATION PARAMS]', { 
       promptKey, 
