@@ -64,6 +64,45 @@ export async function POST(req: NextRequest) {
       } catch (fallbackError: any) {
         console.error('[Ingest] pdfjs-dist fallback failed:', fallbackError && fallbackError.stack ? fallbackError.stack : fallbackError);
         // Последний фолбек: попытаться OCR через pdftoppm -> tesseract (CLI)
+        // Но сначала проверим, доступны ли CLI-инструменты в окружении (на Vercel их обычно нет)
+        const havePdftoppm = isCmdAvailable('pdftoppm')
+        const haveTesseract = isCmdAvailable('tesseract')
+        if (!havePdftoppm || !haveTesseract) {
+          const ocrApiKey = process.env.OCR_SPACE_API_KEY
+          if (ocrApiKey) {
+            // Используем OCR.space API как fallback для продакшена (Vercel)
+            try {
+              console.log('[Ingest] Using OCR.space fallback (no native CLI)')
+              const FormData = require('form-data')
+              const form = new FormData()
+              form.append('apikey', ocrApiKey)
+              form.append('language', 'rus+eng')
+              form.append('isOverlayRequired', 'false')
+              form.append('file', Buffer.from(arrayBuffer), { filename: file.name })
+
+              const axios = require('axios')
+              const res = await axios.post('https://api.ocr.space/parse/image', form, {
+                headers: form.getHeaders(),
+                maxContentLength: Infinity,
+                maxBodyLength: Infinity,
+                timeout: 120000
+              })
+
+              if (res.data && res.data.ParsedResults && res.data.ParsedResults.length) {
+                text = res.data.ParsedResults.map((r: any) => r.ParsedText || '').join('\n\n').trim()
+                console.log('[Ingest] OCR.space parsed length:', text.length)
+              } else {
+                console.warn('[Ingest] OCR.space returned no parsed results', res.data)
+                return NextResponse.json({ error: 'OCR.space returned no parsed results', details: res.data }, { status: 500 })
+              }
+            } catch (e: any) {
+              console.error('[Ingest] OCR.space fallback failed:', e && (e.stack || e.message) ? (e.stack || e.message) : e)
+              return NextResponse.json({ error: 'OCR.space parse failed', details: String(e?.message || e) }, { status: 500 })
+            }
+          } else {
+            return NextResponse.json({ error: 'OCR tools unavailable', details: 'pdftoppm or tesseract not found on server and OCR_SPACE_API_KEY not set' }, { status: 500 })
+          }
+        }
         try {
           console.log('[Ingest] Attempting OCR fallback using pdftoppm + tesseract (requires poppler-utils and tesseract installed)');
           const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mylove-pdf-'))
