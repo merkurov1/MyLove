@@ -36,6 +36,9 @@ export interface AgentResponse {
 export function detectIntent(query: string): AgentIntent {
   const lowerQuery = query.toLowerCase()
   
+  console.log('[INTENT DETECTION] Analyzing query:', query)
+  console.log('[INTENT DETECTION] Lower query:', lowerQuery)
+  
   // Анализ (включая психолингвистический, профайлинг и т.д.)
   if (
     lowerQuery.includes('анализ') ||
@@ -61,6 +64,8 @@ export function detectIntent(query: string): AgentIntent {
       lowerQuery.includes('всех') ||
       lowerQuery.includes('каждую')) &&
       !mentionsNovajaGazeta  // Если упоминается Новая Газета, это не "все документы"
+    
+    console.log('[INTENT DETECTION] Analysis intent detected:', { isLatest, mentionsNovajaGazeta, isAll })
     
     return {
       action: 'analyze',
@@ -103,6 +108,7 @@ export function detectIntent(query: string): AgentIntent {
   // "О чем..." с контекстом (последняя колонка, я писал и т.д.)
   if ((lowerQuery.includes('о чем') || lowerQuery.includes('о ком')) && 
       (lowerQuery.includes('последн') || lowerQuery.includes('новый') || lowerQuery.includes('свежий'))) {
+    console.log('[INTENT DETECTION] "O chem..." rule triggered for latest document')
     return {
       action: 'summarize',
       target: 'latest',
@@ -143,6 +149,7 @@ export function detectIntent(query: string): AgentIntent {
   }
   
   // По умолчанию - обычный Q&A
+  console.log('[INTENT DETECTION] Defaulting to QA intent')
   return {
     action: 'qa',
     confidence: 0.6
