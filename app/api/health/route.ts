@@ -16,11 +16,16 @@ export function GET() {
   const pdftoppm = checkCmd('pdftoppm')
   const tesseract = checkCmd('tesseract')
 
+  // Use runtime-resolution to avoid build-time bundler attempts to resolve optional modules
   let pdfParseAvailable = true
-  try { require.resolve('pdf-parse') } catch (e) { pdfParseAvailable = false }
+  try { // eslint-disable-next-line no-eval
+    eval('require.resolve')('pdf-parse')
+  } catch (e) { pdfParseAvailable = false }
 
   let pdfjsAvailable = true
-  try { require.resolve('pdfjs-dist') } catch (e) { pdfjsAvailable = false }
+  try { // eslint-disable-next-line no-eval
+    eval('require.resolve')('pdfjs-dist')
+  } catch (e) { pdfjsAvailable = false }
 
   return NextResponse.json({
     ok: true,

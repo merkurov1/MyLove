@@ -88,41 +88,44 @@ async function getYouTubeTranscript(url: string): Promise<string> {
 
     // Динамически импортируем библиотеку, т.к. в среде сборки могут быть разные схемы экспорта
     // Dynamic import / require with fallbacks and multiple export shapes
-    let mod: any = null
+    let YoutubeTranscript: any = null
     try {
-      mod = await import('youtube-transcript')
+      const mod = await import('youtube-transcript')
+      YoutubeTranscript = mod.YoutubeTranscript
     } catch (e) {
       try {
         // eslint-disable-next-line @typescript-eslint/no-var-requires
-        mod = require('youtube-transcript')
+        const mod = require('youtube-transcript')
+        YoutubeTranscript = mod.YoutubeTranscript
       } catch (err) {
         console.warn('youtube-transcript module not available:', err)
-        mod = null
+        throw new Error('Модуль youtube-transcript не установлен')
       }
     }
 
-    if (!mod) throw new Error('Модуль youtube-transcript не установлен')
+    if (!YoutubeTranscript) throw new Error('Не удалось получить YoutubeTranscript класс')
 
-    // Normalize possible export shapes to a transcript function
-    let transcriptFn: any = null
-    if (typeof mod === 'function') transcriptFn = mod
-    else if (typeof mod.fetchTranscript === 'function') transcriptFn = mod.fetchTranscript
-    else if (mod.YoutubeTranscript && typeof mod.YoutubeTranscript.fetchTranscript === 'function') transcriptFn = mod.YoutubeTranscript.fetchTranscript
-    else if (mod.default && typeof mod.default.fetchTranscript === 'function') transcriptFn = mod.default.fetchTranscript
-    else if (mod.default && typeof mod.default === 'function') transcriptFn = mod.default
-    
-    if (!transcriptFn) throw new Error('Не удалось получить метод fetchTranscript из youtube-transcript')
-
-    // call the normalized function
-    const transcriptResponse = await transcriptFn(videoId)
-    if (!transcriptResponse) throw new Error('youtube-transcript вернул пустой ответ')
-    if (Array.isArray(transcriptResponse)) {
-      return transcriptResponse.map((seg: any) => seg.text).join(' ')
+    // call the function
+    const transcriptResponse = await YoutubeTranscript.fetchTranscript(videoId)
+    if (!transcriptResponse || !Array.isArray(transcriptResponse) || transcriptResponse.length === 0) {
+      throw new Error('У этого видео нет доступных субтитров')
     }
-    if (typeof transcriptResponse === 'string') return transcriptResponse
-    throw new Error('Не удалось получить транскрипцию из youtube-transcript')
+
+    return transcriptResponse.map((seg: any) => seg.text).join(' ')
   } catch (error: any) {
     console.error('YouTube transcript error:', error)
+    
+    // Handle specific YouTube transcript errors
+    if (error.message && error.message.includes('Transcript is disabled')) {
+      throw new Error('У этого видео отключены субтитры')
+    }
+    if (error.message && error.message.includes('Transcript is not available')) {
+      throw new Error('Субтитры недоступны для этого видео')
+    }
+    if (error.message && error.message.includes('Video unavailable')) {
+      throw new Error('Видео недоступно')
+    }
+    
     throw new Error(error?.message || 'Не удалось получить транскрипцию YouTube видео')
   }
 }
@@ -328,8 +331,24 @@ export async function POST(request: NextRequest) {
 
           if (link.includes('youtube.com') || link.includes('youtu.be')) {
             // YouTube видео
-            content = await getYouTubeTranscript(link)
-            metadata.content_type = 'youtube_video'
+            try {
+              content = await getYouTubeTranscript(link)
+              metadata.content_type = 'youtube_video'
+            } catch (transcriptError: any) {
+              // Если субтитры недоступны, пропускаем видео
+              if (transcriptError.message.includes('субтитры') || transcriptError.message.includes('Transcript')) {
+                console.log(`Пропускаем YouTube видео без субтитров: ${link}`)
+                results.push({
+                  url: link,
+                  success: false,
+                  error: 'У видео нет доступных субтитров'
+                })
+                continue
+              } else {
+                // Другие ошибки (неправильный URL и т.д.) - выбрасываем
+                throw transcriptError
+              }
+            }
           } else {
             // Веб-страница
             content = await scrapeWebPage(link)
@@ -354,10 +373,11 @@ export async function POST(request: NextRequest) {
         }
       }
 
+      const successfulResults = results.filter(r => r.success)
       return NextResponse.json({
-        success: true,
-        message: `Обработано ссылок: ${processedCount} из ${links.length}`,
-        processedCount,
+        success: successfulResults.length > 0,
+        message: `Успешно обработано ${successfulResults.length} из ${links.length} ссылок`,
+        processedCount: successfulResults.length,
         totalLinks: links.length,
         results
       })

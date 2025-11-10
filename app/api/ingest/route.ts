@@ -1,344 +1,204 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { supabase } from '@/utils/supabase/server';
-import { splitIntoChunks } from '@/lib/chunking';
-// Note: getEmbeddings is imported lazily inside the handler to avoid
-// initialization/build-time issues with the OpenAI/Vercel SDK in serverless envs.
-import crypto from 'crypto';
-// Defer optional/heavy modules (mammoth, pdf-parse) to runtime to avoid
-// build-time failures in serverless environments. They will be required
-// lazily inside the handler when needed.
+import { NextRequest, NextResponse } from 'next/server'
+import { supabase } from '@/utils/supabase/server'
+import { splitIntoChunks } from '@/lib/chunking'
+import crypto from 'crypto'
+
+// core Node modules (require at runtime)
 const fs = require('fs')
 const os = require('os')
 const path = require('path')
 const child_process = require('child_process')
 
-// Helper: check if a CLI command is available in PATH
+export const runtime = 'nodejs'
+
+function tryRequire(name: string) {
+  try {
+    // prevent bundlers from statically resolving optional deps
+    // eslint-disable-next-line no-eval
+    return eval('require')(name)
+  } catch (e) {
+    return null
+  }
+}
+
 function isCmdAvailable(cmd: string) {
   try {
-    const res = child_process.spawnSync('which', [cmd], { encoding: 'utf-8' })
-    return res.status === 0 && !!res.stdout
+    const r = child_process.spawnSync('which', [cmd], { encoding: 'utf-8' })
+    return r.status === 0 && !!r.stdout
   } catch (e) {
     return false
   }
 }
 
-export const runtime = 'nodejs';
-
 export async function POST(req: NextRequest) {
-  console.log(`[${new Date().toISOString()}] Ingest API request started`);
-  
-  const formData = await req.formData();
-  const file = formData.get('file') as File | null;
-  const sourceId = formData.get('sourceId') as string | null;
-  
-  if (!file) {
-    return NextResponse.json({ error: 'Файл не найден' }, { status: 400 });
-  }
+  try {
+    const form = await req.formData()
+    const file = form.get('file') as File | null
+    const sourceId = (form.get('sourceId') as string) || process.env.DEFAULT_SOURCE_ID || null
 
-  const arrayBuffer = await file.arrayBuffer();
-  let text: string;
-  
-  // Определяем тип файла и парсим соответственно
-  const fileName = file.name.toLowerCase();
-  if (fileName.endsWith('.pdf')) {
-    console.log(`[${new Date().toISOString()}] Parsing .pdf file with pdf-parse`);
-    try {
-      // Lazy-require pdf-parse so route doesn't fail if module isn't available at build-time
-      let pdfParse: any = null
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
-        pdfParse = require('pdf-parse')
-      } catch (modErr) {
-        console.warn('[Ingest] pdf-parse module not available:', modErr)
-      }
+    if (!file) return NextResponse.json({ error: 'file is required' }, { status: 400 })
 
-      if (pdfParse) {
-        const pdfData = await pdfParse(Buffer.from(arrayBuffer));
-        text = pdfData.text;
-      } else {
-        throw new Error('pdf-parse module not available')
-      }
-    } catch (error: any) {
-      console.error('[Ingest] pdf-parse failed:', error && error.stack ? error.stack : error);
-      // Fallback: try pdfjs-dist text extraction for PDFs that pdf-parse can't handle
+    // Проверяем размер файла
+    const maxSize = 4.5 * 1024 * 1024; // 4.5MB
+    if (file.size > maxSize) {
+      return NextResponse.json({ 
+        error: `file_too_large`, 
+        details: `File size ${(file.size / 1024 / 1024).toFixed(1)}MB exceeds limit of 4.5MB` 
+      }, { status: 400 })
+    }
+
+    const buf = Buffer.from(await file.arrayBuffer())
+    const name = (file.name || 'upload').toLowerCase()
+    let text = ''
+
+    if (name.endsWith('.pdf')) {
+      // 1) pdf-parse (if installed)
       try {
-        console.log('[Ingest] Trying fallback extraction with pdfjs-dist');
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
-        const pdfjsLib = require('pdfjs-dist/legacy/build/pdf.js');
-        const loadingTask = pdfjsLib.getDocument({ data: Buffer.from(arrayBuffer) });
-        const pdf = await loadingTask.promise;
-        let fullText = '';
-        for (let i = 1; i <= pdf.numPages; i++) {
-          const page = await pdf.getPage(i);
-          const content = await page.getTextContent();
-          const strings = content.items.map((it: any) => it.str || '').join(' ');
-          fullText += strings + '\n\n';
+        const pdfParse = tryRequire('pdf-parse')
+        if (pdfParse) {
+          const pd = await pdfParse(buf)
+          text = String(pd?.text || '')
         }
-        text = fullText.trim();
-        console.log('[Ingest] pdfjs-dist fallback succeeded, length:', text.length);
-      } catch (fallbackError: any) {
-        console.error('[Ingest] pdfjs-dist fallback failed:', fallbackError && fallbackError.stack ? fallbackError.stack : fallbackError);
-        // Последний фолбек: попытаться OCR через pdftoppm -> tesseract (CLI)
-        // Но сначала проверим, доступны ли CLI-инструменты в окружении (на Vercel их обычно нет)
+      } catch (e) {
+        console.warn('[ingest] pdf-parse error', String(e))
+      }
+
+      // 2) pdfjs-dist fallback
+      if (!text) {
+        try {
+          const pdfjs = tryRequire('pdfjs-dist/legacy/build/pdf.js') || tryRequire('pdfjs-dist')
+          if (pdfjs) {
+            const loading = pdfjs.getDocument({ data: buf })
+            const pdf = await loading.promise
+            let acc = ''
+            for (let i = 1; i <= pdf.numPages; i++) {
+              const p = await pdf.getPage(i)
+              const c = await p.getTextContent()
+              acc += c.items.map((it: any) => it.str || '').join(' ') + '\n\n'
+            }
+            text = acc.trim()
+          }
+        } catch (e) {
+          console.warn('[ingest] pdfjs fallback error', String(e))
+        }
+      }
+
+      // 3) OCR.space (cloud) fallback
+      if (!text && process.env.OCR_SPACE_API_KEY) {
+        try {
+          const FormData = tryRequire('form-data')
+          const axios = tryRequire('axios') || require('axios')
+          if (FormData && axios) {
+            const fd = new FormData()
+            fd.append('apikey', process.env.OCR_SPACE_API_KEY)
+            fd.append('file', buf, { filename: file.name })
+            const res = await axios.post('https://api.ocr.space/parse/image', fd, { headers: fd.getHeaders(), timeout: 120000 })
+            if (res.data?.ParsedResults?.length) text = res.data.ParsedResults.map((r: any) => r.ParsedText || '').join('\n\n').trim()
+          }
+        } catch (e) {
+          console.warn('[ingest] OCR.space error', String(e))
+        }
+      }
+
+      // 4) CLI OCR (pdftoppm + tesseract)
+      if (!text) {
         const havePdftoppm = isCmdAvailable('pdftoppm')
         const haveTesseract = isCmdAvailable('tesseract')
-        if (!havePdftoppm || !haveTesseract) {
-          const ocrApiKey = process.env.OCR_SPACE_API_KEY
-          if (ocrApiKey) {
-            // Используем OCR.space API как fallback для продакшена (Vercel)
-            try {
-              console.log('[Ingest] Using OCR.space fallback (no native CLI)')
-              const FormData = require('form-data')
-              const form = new FormData()
-              form.append('apikey', ocrApiKey)
-              form.append('language', 'rus+eng')
-              form.append('isOverlayRequired', 'false')
-              form.append('file', Buffer.from(arrayBuffer), { filename: file.name })
-
-              const axios = require('axios')
-              const res = await axios.post('https://api.ocr.space/parse/image', form, {
-                headers: form.getHeaders(),
-                maxContentLength: Infinity,
-                maxBodyLength: Infinity,
-                timeout: 120000
-              })
-
-              if (res.data && res.data.ParsedResults && res.data.ParsedResults.length) {
-                text = res.data.ParsedResults.map((r: any) => r.ParsedText || '').join('\n\n').trim()
-                console.log('[Ingest] OCR.space parsed length:', text.length)
-              } else {
-                console.warn('[Ingest] OCR.space returned no parsed results', res.data)
-                return NextResponse.json({ error: 'OCR.space returned no parsed results', details: res.data }, { status: 500 })
-              }
-            } catch (e: any) {
-              console.error('[Ingest] OCR.space fallback failed:', e && (e.stack || e.message) ? (e.stack || e.message) : e)
-              return NextResponse.json({ error: 'OCR.space parse failed', details: String(e?.message || e) }, { status: 500 })
+        if (havePdftoppm && haveTesseract) {
+          try {
+            const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'mylove-pdf-'))
+            const pdfPath = path.join(tmp, 'upload.pdf')
+            fs.writeFileSync(pdfPath, buf)
+            const pd = child_process.spawnSync('pdftoppm', ['-png', pdfPath, path.join(tmp, 'page')], { timeout: 60000 })
+            if (pd.error) throw pd.error
+            const imgs = fs.readdirSync(tmp).filter((f: string) => f.endsWith('.png')).sort()
+            let acc = ''
+            for (const im of imgs) {
+              const out = child_process.spawnSync('tesseract', [path.join(tmp, im), 'stdout', '-l', 'eng+rus'], { encoding: 'utf-8', timeout: 120000 })
+              if (out.error) throw out.error
+              acc += String(out.stdout || '') + '\n\n'
             }
-          } else {
-            return NextResponse.json({ error: 'OCR tools unavailable', details: 'pdftoppm or tesseract not found on server and OCR_SPACE_API_KEY not set' }, { status: 500 })
+            try { fs.rmSync(tmp, { recursive: true, force: true }) } catch (e) {}
+            text = acc.trim()
+          } catch (e) {
+            console.warn('[ingest] CLI OCR error', String(e))
           }
-        }
-        try {
-          console.log('[Ingest] Attempting OCR fallback using pdftoppm + tesseract (requires poppler-utils and tesseract installed)');
-          const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mylove-pdf-'))
-          const pdfPath = path.join(tmpDir, 'upload.pdf')
-          fs.writeFileSync(pdfPath, Buffer.from(arrayBuffer))
-
-          // Convert PDF pages to PNGs using pdftoppm
-          const pdftoppm = child_process.spawnSync('pdftoppm', ['-png', pdfPath, path.join(tmpDir, 'page')], { timeout: 60_000 })
-          if (pdftoppm.error) throw pdftoppm.error
-          if (pdftoppm.status !== 0) {
-            console.warn('[Ingest] pdftoppm stderr:', pdftoppm.stderr && pdftoppm.stderr.toString())
-          }
-
-          const images = fs.readdirSync(tmpDir).filter((f: string) => f.endsWith('.png')).sort()
-          if (!images.length) throw new Error('pdftoppm did not produce images')
-
-          let ocrText = ''
-          for (const img of images) {
-            const imgPath = path.join(tmpDir, img)
-            // Run tesseract CLI and capture stdout
-            const tesseract = child_process.spawnSync('tesseract', [imgPath, 'stdout', '-l', 'eng+rus'], { encoding: 'utf-8', timeout: 120_000 })
-            if (tesseract.error) throw tesseract.error
-            if (tesseract.status !== 0) {
-              console.warn('[Ingest] tesseract stderr:', tesseract.stderr)
-            }
-            ocrText += (tesseract.stdout || '') + '\n\n'
-          }
-
-          // Cleanup temp files
-          try { fs.rmSync(tmpDir, { recursive: true, force: true }) } catch (e) { /* ignore */ }
-
-          text = ocrText.trim()
-          console.log('[Ingest] OCR fallback succeeded, text length:', text.length)
-        } catch (ocrErr: any) {
-          console.error('[Ingest] OCR fallback failed:', ocrErr && ocrErr.stack ? ocrErr.stack : ocrErr)
-          return NextResponse.json({
-            error: 'Не удалось прочитать PDF файл',
-            details: String(error?.message || error) + ' | fallback: ' + String(fallbackError?.message || fallbackError) + ' | ocr: ' + String(ocrErr?.message || ocrErr)
-          }, { status: 400 })
         }
       }
-    }
-  } else if (fileName.endsWith('.docx')) {
-    console.log(`[${new Date().toISOString()}] Parsing .docx file with mammoth`);
-    try {
-      // Lazy-require mammoth to avoid build-time module resolution issues
-      let mammoth: any = null
+
+    } else if (name.endsWith('.docx')) {
       try {
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
-        mammoth = require('mammoth')
-      } catch (modErr) {
-        console.warn('[Ingest] mammoth module not available:', modErr)
-        return NextResponse.json({ error: 'mammoth module not available on server' }, { status: 500 })
+        const mammoth = tryRequire('mammoth')
+        if (mammoth) {
+          const r = await mammoth.extractRawText({ buffer: buf })
+          text = String(r?.value || '')
+        }
+      } catch (e) {
+        console.warn('[ingest] mammoth error', String(e))
       }
-
-      const result = await mammoth.extractRawText({ buffer: Buffer.from(arrayBuffer) });
-      text = result.value;
-      if (result.messages && result.messages.length > 0) {
-        console.warn('[Ingest] Mammoth warnings:', result.messages);
-      }
-    } catch (error: any) {
-      console.error('[Ingest] Error parsing .docx:', error);
-      return NextResponse.json({ 
-        error: 'Не удалось прочитать .docx файл', 
-        details: error?.message || String(error)
-      }, { status: 400 });
+    } else {
+      text = buf.toString('utf-8')
     }
-  } else {
-    // Для .txt и других текстовых файлов читаем как UTF-8
-    text = Buffer.from(arrayBuffer).toString('utf-8');
-  }
-  
-  // КРИТИЧЕСКОЕ: Удаляем нулевые байты и другие проблемные Unicode символы
-  // PostgreSQL не поддерживает \u0000 в text полях
-  text = text
-    .replace(/\u0000/g, '') // Удаляем null bytes
-    .replace(/[\uFFFE\uFFFF]/g, '') // Удаляем invalid Unicode
-    .trim();
-  
-  if (!text) {
-    return NextResponse.json({ error: 'Файл пустой или не удалось прочитать текст' }, { status: 400 });
-  }
 
-  console.log(`[${new Date().toISOString()}] File read, size: ${text.length} chars (cleaned)`);
+    text = (text || '').replace(/\u0000/g, '').replace(/[\uFFFE\uFFFF]/g, '').trim()
+    if (!text) return NextResponse.json({ error: 'empty_or_unreadable' }, { status: 400 })
 
-  // КРИТИЧЕСКОЕ: Чанкуем с явным ограничением 2000 символов = ~500 токенов
-  // OpenAI embedding limit: 8192 tokens, но мы ограничиваем чанк до 2000 для безопасности
-  const chunks: string[] = splitIntoChunks(text, 2000, 200);
-  if (!chunks.length) {
-    return NextResponse.json({ error: 'Не удалось разбить текст на чанки' }, { status: 400 });
-  }
+    const chunks = splitIntoChunks(text, 2000, 200)
+    if (!chunks.length) return NextResponse.json({ error: 'chunking_failed' }, { status: 400 })
 
-  console.log(`[${new Date().toISOString()}] Text chunked into ${chunks.length} chunks (max 2000 chars each)`);
-
-  try {
-    // Получаем эмбеддинги для чанков через Vercel AI SDK
-    console.log(`[${new Date().toISOString()}] Generating embeddings with OpenAI...`);
-    // Lazy-import embedding helper to avoid bundling issues at module load time
+    // load embeddings helper dynamically
     let getEmbeddings: any = null
     try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
       getEmbeddings = (await import('../../../lib/embedding-ai')).getEmbeddings
     } catch (e) {
-      try {
-        // Fallback to require (CommonJS)
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
-        getEmbeddings = require('../../../lib/embedding-ai').getEmbeddings
-      } catch (err) {
-        console.error('[Ingest] Failed to load embedding helper:', e || err)
-        return NextResponse.json({ error: 'Embedding helper unavailable', details: String(e || err) }, { status: 500 })
+      try { getEmbeddings = tryRequire('../../../lib/embedding-ai')?.getEmbeddings } catch (e2) { /* noop */ }
+    }
+    if (!getEmbeddings) return NextResponse.json({ error: 'embeddings_unavailable' }, { status: 500 })
+
+    const embeddings = await getEmbeddings(chunks)
+    if (!embeddings || embeddings.length !== chunks.length) return NextResponse.json({ error: 'embeddings_mismatch' }, { status: 500 })
+
+    const { data: doc, error: docError } = await supabase.from('documents').insert({ title: file.name, description: `Uploaded file: ${file.name}`, source_url: null, source_id: sourceId || process.env.DEFAULT_SOURCE_ID }).select().single()
+    if (docError || !doc) return NextResponse.json({ error: 'document_create_failed', supabaseError: docError }, { status: 500 })
+
+    const clean = (s: string) => s.replace(/\u0000/g, '').replace(/[\uFFFE\uFFFF]/g, '').replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '').trim()
+    const rows = chunks.map((c: string, i: number) => {
+      const cleaned = clean(c)
+      if (!cleaned || cleaned.length < 10) return null
+      return {
+        document_id: doc.id,
+        chunk_index: i,
+        content: cleaned,
+        embedding: embeddings[i],
+        checksum: crypto.createHash('sha256').update(cleaned).digest('hex'),
+        metadata: { source_file: file.name, chunk_length: cleaned.length }
       }
-    }
+    }).filter((r): r is NonNullable<typeof r> => r !== null)
 
-    const embeddings: number[][] = await getEmbeddings(chunks);
+    if (!rows.length) return NextResponse.json({ error: 'all_chunks_empty' }, { status: 400 })
+
+    const { error: insertErr } = await supabase.from('document_chunks').insert(rows)
+    if (insertErr) return NextResponse.json({ error: 'chunk_insert_failed', supabaseError: insertErr }, { status: 500 })
+
+    return NextResponse.json({ success: true, document_id: doc.id, totalChunks: rows.length })
+  } catch (e: any) {
+    console.error('[ingest] Error:', e)
     
-    if (!embeddings || embeddings.length !== chunks.length) {
-      return NextResponse.json({ error: 'Ошибка получения эмбеддингов' }, { status: 500 });
-    }
-
-    console.log(`[${new Date().toISOString()}] Embeddings generated (${embeddings.length} vectors, dimension: ${embeddings[0]?.length})`);
-
-    // Сохраняем документ в БД
-    const { data: doc, error: docError } = await supabase.from('documents').insert({
-      title: file.name,
-      description: `Uploaded file: ${file.name}`,
-      source_url: null,
-      source_id: sourceId || process.env.DEFAULT_SOURCE_ID || 'c5aab739-7112-4360-be9e-45edf4287c42',
-    }).select().single();
+    // Определяем тип ошибки
+    let errorMessage = 'internal_error'
+    let details = String(e?.message || e)
     
-    if (docError || !doc) {
-      console.error('[Ingest] Ошибка создания документа:', docError);
-      return NextResponse.json({
-        error: 'Ошибка создания документа',
-        supabaseError: docError,
-        env: {
-          SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
-          SERVICE_ROLE_KEY_SET: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
-          NODE_ENV: process.env.NODE_ENV,
-        },
-        fileMeta: {
-          name: file.name,
-          size: file.size,
-          type: file.type,
-        }
-      }, { status: 500 });
+    if (details.includes('timeout') || details.includes('aborted')) {
+      errorMessage = 'processing_timeout'
+      details = 'File processing took too long. Try with a smaller file or different format.'
+    } else if (details.includes('out of memory') || details.includes('heap')) {
+      errorMessage = 'memory_limit_exceeded'
+      details = 'File too large to process. Try with a smaller file.'
+    } else if (details.includes('pdf') && details.includes('parse')) {
+      errorMessage = 'pdf_parsing_failed'
+      details = 'Could not extract text from PDF. File may be corrupted or have unsupported format.'
     }
-
-    console.log(`[${new Date().toISOString()}] Document created: ${doc.id}`);
-
-    // Функция очистки текста от проблемных символов для PostgreSQL
-    const cleanTextForPostgres = (text: string): string => {
-      return text
-        .replace(/\u0000/g, '') // null bytes
-        .replace(/[\uFFFE\uFFFF]/g, '') // invalid Unicode
-        .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '') // control characters (кроме \n \r \t)
-        .trim();
-    };
-
-    // Сохраняем чанки с очисткой контента
-    const chunkRows = chunks
-      .map((content: string, i: number) => {
-        const cleanedContent = cleanTextForPostgres(content);
-        // КРИТИЧЕСКОЕ: Пропускаем пустые чанки после очистки
-        if (!cleanedContent || cleanedContent.length < 10) {
-          console.warn(`[Ingest] Chunk ${i} is empty after cleaning, skipping`);
-          return null;
-        }
-        return {
-          document_id: doc.id,
-          chunk_index: i,
-          content: cleanedContent,
-          embedding: embeddings[i],
-          checksum: crypto.createHash('sha256').update(cleanedContent).digest('hex'),
-          metadata: {
-            source_file: file.name,
-            chunk_length: cleanedContent.length,
-            embedding_model: 'text-embedding-3-small',
-            embedding_dimension: embeddings[i].length,
-          }
-        };
-      })
-      .filter((row): row is NonNullable<typeof row> => row !== null);
-
-    if (chunkRows.length === 0) {
-      console.error('[Ingest] All chunks are empty after cleaning!');
-      return NextResponse.json({
-        error: 'Все чанки пусты после очистки. Файл содержит только служебные символы.',
-        originalChunks: chunks.length,
-        cleanedChunks: 0
-      }, { status: 400 });
-    }
-
-    console.log(`[${new Date().toISOString()}] Prepared ${chunkRows.length} chunks for insertion (filtered from ${chunks.length})`);
     
-    const { error: chunkError } = await supabase.from('document_chunks').insert(chunkRows);
-    if (chunkError) {
-      console.error('[Ingest] Ошибка сохранения чанков:', chunkError);
-      return NextResponse.json({
-        error: 'Ошибка сохранения чанков',
-        supabaseError: chunkError,
-        chunkRowsCount: chunkRows.length,
-        docId: doc.id
-      }, { status: 500 });
-    }
-
-    console.log(`[${new Date().toISOString()}] Chunks saved successfully`);
-
-    return NextResponse.json({ 
-      success: true, 
-      document_id: doc.id, 
-      totalChunks: chunkRows.length,
-      originalChunks: chunks.length,
-      embeddingModel: 'text-embedding-3-small',
-      embeddingDimension: 1536
-    });
-    
-  } catch (error: any) {
-    console.error('[Ingest] Error:', error);
-    return NextResponse.json({
-      error: 'Ошибка при обработке файла',
-      message: error.message
-    }, { status: 500 });
+    return NextResponse.json({ error: errorMessage, details }, { status: 500 })
   }
 }

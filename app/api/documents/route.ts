@@ -42,21 +42,20 @@ export async function DELETE(request: NextRequest) {
     }
     
     console.log('[Documents DELETE] Deleting document:', id)
-    // Attempt delete and return deleted row(s) for visibility
-    // use explicit select('*') to ensure Supabase returns the deleted rows
-    const { data: deleted, error, status } = await supabase
+    
+    // Delete the document (chunks will be deleted automatically due to CASCADE)
+    const { error } = await supabase
       .from('documents')
       .delete()
       .eq('id', id)
-      .select('*')
-
+    
     if (error) {
       console.error('[Documents DELETE] Error:', error)
-      return NextResponse.json({ error: error.message, details: error }, { status: status || 500 })
+      return NextResponse.json({ error: error.message, details: error }, { status: 500 })
     }
-
-  console.log('[Documents DELETE] Deleted rows:', deleted)
-  return NextResponse.json({ success: true, deleted, deletedCount: Array.isArray(deleted) ? deleted.length : 0 })
+    
+    console.log('[Documents DELETE] Successfully deleted document:', id)
+    return NextResponse.json({ success: true, deletedId: id })
   } catch (err: any) {
     console.error('[Documents DELETE] Exception:', err)
     return NextResponse.json({ error: err.message || 'Server error' }, { status: 500 })

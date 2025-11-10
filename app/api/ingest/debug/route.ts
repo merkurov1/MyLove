@@ -39,39 +39,56 @@ export async function POST(req: NextRequest) {
 
     // 1) pdf-parse
     try {
-      let pdfParse: any = null
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
-        pdfParse = require('pdf-parse')
-      } catch (modErr) {
-        result.pdfParse = { ok: false, error: 'pdf-parse module not available', details: String(modErr) }
-        pdfParse = null
+      const tryRequire = (p: string) => {
+        try {
+          // eslint-disable-next-line no-eval
+          return eval('require')(p)
+        } catch (e) {
+          return null
+        }
       }
 
+      const pdfParse = tryRequire('pdf-parse')
       if (pdfParse) {
         const pd = await pdfParse(buf)
         result.pdfParse = { ok: true, textSample: String(pd.text || '').slice(0, 2000), length: (pd.text||'').length }
+      } else {
+        result.pdfParse = { ok: false, error: 'pdf-parse module not available' }
       }
     } catch (err: any) {
-      result.pdfParse = { ok: false, error: String(err.message || err), stack: err.stack }
+      result.pdfParse = { ok: false, error: String(err.message || err), stack: err?.stack }
     }
 
-    // 2) pdfjs-dist
-    try {
-      const pdfjsLib = require('pdfjs-dist/legacy/build/pdf.js')
-      const loadingTask = pdfjsLib.getDocument({ data: buf })
-      const pdf = await loadingTask.promise
-      let full = ''
-      for (let i = 1; i <= pdf.numPages; i++) {
-        const page = await pdf.getPage(i)
-        const content = await page.getTextContent()
-        full += content.items.map((it: any) => it.str || '').join(' ') + '\n\n'
-        if (full.length > 2000) break
-      }
-      result.pdfjs = { ok: true, textSample: full.slice(0, 2000), pages: pdf.numPages }
-    } catch (err: any) {
-      result.pdfjs = { ok: false, error: String(err.message || err), stack: err.stack }
-    }
+        // 2) pdfjs-dist (load at runtime only to avoid bundler resolving optional module)
+        try {
+          const tryRequire = (p: string) => {
+            try {
+              // eslint-disable-next-line no-eval
+              return eval('require')(p)
+            } catch (e) {
+              return null
+            }
+          }
+
+          let pdfjsLib: any = tryRequire('pdfjs-dist/legacy/build/pdf.js')
+          if (!pdfjsLib) pdfjsLib = tryRequire('pdfjs-dist')
+          if (!pdfjsLib) {
+            throw new Error('pdfjs-dist not available')
+          }
+
+          const loadingTask = pdfjsLib.getDocument({ data: buf })
+          const pdf = await loadingTask.promise
+          let full = ''
+          for (let i = 1; i <= pdf.numPages; i++) {
+            const page = await pdf.getPage(i)
+            const content = await page.getTextContent()
+            full += content.items.map((it: any) => it.str || '').join(' ') + '\n\n'
+            if (full.length > 2000) break
+          }
+          result.pdfjs = { ok: true, textSample: full.slice(0, 2000), pages: pdf.numPages }
+        } catch (err: any) {
+          result.pdfjs = { ok: false, error: String(err.message || err), stack: err?.stack }
+        }
 
   // 3) OCR fallback (pdftoppm + tesseract) but only if CLI present
     const havePdftoppm = isCmdAvailable('pdftoppm')

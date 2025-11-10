@@ -18,6 +18,15 @@ export default function FileUploader({ sourceId }: FileUploaderProps) {
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0] || null;
+    if (f) {
+      // Проверяем размер файла (максимум 4.5MB для Vercel)
+      const maxSize = 4.5 * 1024 * 1024; // 4.5MB
+      if (f.size > maxSize) {
+        setMessage(`✗ Файл слишком большой: ${(f.size / 1024 / 1024).toFixed(1)}MB. Максимальный размер: 4.5MB`);
+        setStatus('error');
+        return;
+      }
+    }
     setFile(f);
     setMessage(null);
   };
@@ -25,6 +34,15 @@ export default function FileUploader({ sourceId }: FileUploaderProps) {
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     const f = e.dataTransfer.files?.[0] || null;
+    if (f) {
+      // Проверяем размер файла (максимум 4.5MB для Vercel)
+      const maxSize = 4.5 * 1024 * 1024; // 4.5MB
+      if (f.size > maxSize) {
+        setMessage(`✗ Файл слишком большой: ${(f.size / 1024 / 1024).toFixed(1)}MB. Максимальный размер: 4.5MB`);
+        setStatus('error');
+        return;
+      }
+    }
     setFile(f);
     setMessage(null);
   };
@@ -56,6 +74,8 @@ export default function FileUploader({ sourceId }: FileUploaderProps) {
       const res = await fetch("/api/ingest", {
         method: "POST",
         body: formData,
+        // Увеличиваем таймаут для больших файлов
+        signal: AbortSignal.timeout(file.size > 1024 * 1024 ? 120000 : 60000), // 2 мин для файлов >1MB, 1 мин для остальных
       });
       
       clearInterval(uploadInterval);
@@ -68,7 +88,18 @@ export default function FileUploader({ sourceId }: FileUploaderProps) {
         setUploadProgress(prev => Math.min(prev + 5, 90));
       }, 300);
       
-      const data = await res.json();
+      // Проверяем content-type перед парсингом JSON
+      const contentType = res.headers.get('content-type');
+      let data;
+      
+      if (contentType && contentType.includes('application/json')) {
+        data = await res.json();
+      } else {
+        // Если не JSON, читаем как текст
+        const text = await res.text();
+        data = { error: `Server returned non-JSON response: ${text.substring(0, 200)}` };
+      }
+      
       clearInterval(processInterval);
       
       if (res.ok) {
@@ -93,7 +124,26 @@ export default function FileUploader({ sourceId }: FileUploaderProps) {
         }, 3000);
       } else {
         setStatus('error');
-        setMessage(`✗ Ошибка: ${data.error || 'Неизвестная ошибка'}`);
+        let errorMsg = `✗ Ошибка: ${data.error || 'Неизвестная ошибка'}`;
+        
+        // Преобразуем технические ошибки в понятные сообщения
+        if (data.error === 'file_too_large') {
+          errorMsg = `✗ Файл слишком большой: ${(file.size / 1024 / 1024).toFixed(1)}MB. Максимальный размер: 4.5MB`;
+        } else if (data.error === 'processing_timeout') {
+          errorMsg = '✗ Обработка файла заняла слишком много времени. Попробуйте с меньшим файлом.';
+        } else if (data.error === 'memory_limit_exceeded') {
+          errorMsg = '✗ Файл слишком большой для обработки. Попробуйте с меньшим файлом.';
+        } else if (data.error === 'pdf_parsing_failed') {
+          errorMsg = '✗ Не удалось прочитать PDF файл. Файл может быть поврежден или иметь неподдерживаемый формат.';
+        } else if (data.error === 'empty_or_unreadable') {
+          errorMsg = '✗ Файл пустой или не удалось извлечь текст.';
+        } else if (data.error === 'chunking_failed') {
+          errorMsg = '✗ Не удалось разбить файл на фрагменты.';
+        } else if (data.error === 'embeddings_unavailable') {
+          errorMsg = '✗ Сервис эмбеддингов недоступен. Попробуйте позже.';
+        }
+        
+        setMessage(errorMsg);
         setDetails(data);
         setUploadProgress(0);
         console.error("Upload error:", data);
@@ -172,7 +222,8 @@ export default function FileUploader({ sourceId }: FileUploaderProps) {
                 или кликните для выбора
               </div>
               <div className="text-xs text-gray-400 mt-2">
-                Поддерживаемые форматы: TXT, PDF, DOC, DOCX, MD, RTF
+                Поддерживаемые форматы: TXT, PDF, DOC, DOCX, MD, RTF<br/>
+                Максимальный размер: 4.5 MB
               </div>
             </div>
           )}
