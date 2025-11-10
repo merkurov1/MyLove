@@ -280,7 +280,7 @@ export async function POST(req: NextRequest) {
     
     // 4. Найти релевантные документы через multi-query поиск
     // Собираем результаты из всех вариантов запросов
-    const allMatches: any[] = [];
+    let allMatches: any[] = [];
     const seenDocumentIds = new Set<string>();
     
     for (let i = 0; i < queryEmbeddings.length; i++) {
@@ -335,19 +335,11 @@ export async function POST(req: NextRequest) {
         contentPreview: allMatches[0].content?.substring(0, 100) 
       } : null
     });
-    
-    // Fallback: если similarity < 0.35, загрузим больше чанков для лучшего контекста
-    if (topSimilarity < 0.35 && allMatches && allMatches.length > 0) {
-      console.log('[FALLBACK] Low similarity, expanding search to 12 chunks...');
-      const { data: expandedMatches } = await supabase.rpc('match_documents', {
-        query_embedding: primaryEmbedding,
-        match_count: 12
-      });
-      if (expandedMatches) {
-        allMatches.length = 0;
-        allMatches.push(...expandedMatches);
-      }
-    }
+
+    // ДИНАМИЧЕСКИЙ SIMILARITY THRESHOLD: фильтруем низкокачественные результаты
+    const minSimilarity = intent.action === 'recipes' ? 0.4 : 0.3;
+    allMatches = allMatches.filter(match => (match.similarity || 0) >= minSimilarity);
+    console.log(`[QUALITY FILTER] Filtered ${allMatches.length} matches with similarity >= ${minSimilarity}`);
 
     // Если все варианты поиска провалились, возвращаем ошибку
     if (allMatches.length === 0) {
@@ -380,7 +372,7 @@ export async function POST(req: NextRequest) {
     }
 
     // DEDUPLICATION: Группируем по document_id, берём лучший чанк из каждого документа
-    // Для рецептов отключаем deduplication, чтобы показать все найденные рецепты
+    // Для рецептов используем умную группировку по названию рецепта
     if (matches && matches.length > 0 && intent.action !== 'recipes') {
       const docGroups = new Map<string, any[]>();
       
@@ -414,12 +406,45 @@ export async function POST(req: NextRequest) {
       
       console.log(`[DEDUPLICATION] Reduced from ${docGroups.size} groups to ${matches.length} unique documents`);
     } else if (intent.action === 'recipes') {
-      // Для рецептов: сортируем по similarity и берем топ результатов без deduplication
-      matches = matches
+      // УМНАЯ ГРУППИРОВКА РЕЦЕПТОВ: группируем по названию рецепта, а не по документу
+      const extractRecipeTitle = (content: string): string => {
+        const lines = content.split('\n');
+        for (const line of lines.slice(0, 3)) { // Проверяем первые 3 строки
+          const trimmed = line.trim();
+          // Ищем строки, которые выглядят как названия рецептов
+          if (trimmed.length > 3 && trimmed.length < 100 &&
+              (trimmed.toLowerCase().includes('рецепт') ||
+               trimmed.includes('🍽️') ||
+               /^[А-ЯA-Z].*[блюда|салат|паста|курица|рыба|мясо]/i.test(trimmed))) {
+            return trimmed;
+          }
+        }
+        // Fallback: первые 50 символов
+        return content.substring(0, 50).split('\n')[0].trim();
+      };
+
+      const recipeGroups = new Map<string, any[]>();
+      for (const match of matches) {
+        const title = extractRecipeTitle(match.content);
+        if (!recipeGroups.has(title)) {
+          recipeGroups.set(title, []);
+        }
+        recipeGroups.get(title)!.push(match);
+      }
+
+      // Из каждой группы рецептов берём чанк с максимальным similarity
+      const deduplicatedRecipes = Array.from(recipeGroups.values()).map(group => {
+        return group.reduce((best, current) => {
+          return (current.similarity || 0) > (best.similarity || 0) ? current : best;
+        });
+      });
+
+      // Сортируем по similarity и ограничиваем
+      matches = deduplicatedRecipes
         .sort((a, b) => (b.similarity || 0) - (a.similarity || 0))
-        .slice(0, 40); // Больше результатов для рецептов
-      
-      console.log(`[RECIPES] Keeping all ${matches.length} recipe matches (no deduplication)`);
+        .slice(0, 30); // Максимум 30 уникальных рецептов
+
+      console.log(`[RECIPES] Smart deduplication: ${recipeGroups.size} recipe groups → ${matches.length} unique recipes`);
     }
 
     let contextText = '';
@@ -581,8 +606,10 @@ export async function POST(req: NextRequest) {
         }
       }
       
-      // Увеличили лимит с 3000 до 8000 для лучших ответов
-      contextText = chunksWithDocs.join('\n\n---\n\n').substring(0, 8000);
+      // Динамический лимит контекста: больше для рецептов и анализа
+      const contextLimit = intent.action === 'recipes' ? 16000 :
+                          intent.action === 'analyze' ? 12000 : 8000;
+      contextText = chunksWithDocs.join('\n\n---\n\n').substring(0, contextLimit);
     }
     
     console.log('[CONTEXT]', { 
@@ -775,6 +802,18 @@ export async function POST(req: NextRequest) {
     // Track metrics
     const totalLatency = Date.now() - startTime;
     const searchLatency = Date.now() - searchStartTime;
+    
+    // ДОПОЛНИТЕЛЬНЫЕ МЕТРИКИ ДЛЯ РЕЦЕПТОВ
+    if (intent.action === 'recipes') {
+      console.log('[RECIPES METRICS]', {
+        query,
+        totalChunksFound: matches.length,
+        uniqueDocuments: new Set(matches.map(m => m.document_id)).size,
+        avgSimilarity: matches.length > 0 ? matches.reduce((sum, m) => sum + (m.similarity || 0), 0) / matches.length : 0,
+        contextLength: contextText.length,
+        minSimilarity: 0.4
+      });
+    }
     
     const metrics: QueryMetrics = {
       timestamp: new Date().toISOString(),
