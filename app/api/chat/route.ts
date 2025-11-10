@@ -355,6 +355,39 @@ export async function POST(req: NextRequest) {
       } : null
     });
 
+    // Special-case: "All recipes" queries should return a comprehensive list
+    const isAllRecipesQuery = (lowerQuery.includes('все') || lowerQuery.includes('список') || lowerQuery.includes('find all') || lowerQuery.includes('all'))
+                              && (lowerQuery.includes('рецепт') || lowerQuery.includes('еда') || lowerQuery.includes('блюд') || lowerQuery.includes('кухн'));
+
+    if (isAllRecipesQuery) {
+      try {
+        console.log('[ALL-RECIPES] Detected all-recipes request — performing keyword scan in document_chunks');
+        // Get chunks that likely contain recipes (keyword-based, non-destructive)
+        const { data: recipeChunks, error: recipeErr } = await supabase
+          .from('document_chunks')
+          .select('id, document_id, content')
+          .or("content.ilike.%рецепт%,content.ilike.%ингредиент%,content.ilike.%готовить%")
+          .limit(Math.max(100, matchCount));
+
+        if (recipeErr) {
+          console.warn('[ALL-RECIPES] Keyword scan failed:', recipeErr.message);
+        } else if (recipeChunks && recipeChunks.length > 0) {
+          console.log(`[ALL-RECIPES] Found ${recipeChunks.length} candidate recipe chunks via keyword scan`);
+          // Convert to matches with a neutral similarity so downstream code can handle them
+          allMatches = recipeChunks.map((c: any) => ({
+            id: c.id,
+            document_id: c.document_id,
+            content: c.content,
+            similarity: 0.5
+          }));
+        } else {
+          console.log('[ALL-RECIPES] Keyword scan returned no chunks — falling back to semantic matches');
+        }
+      } catch (ex: any) {
+        console.warn('[ALL-RECIPES] Fallback scan failed:', ex?.message || ex);
+      }
+    }
+
     // ДИНАМИЧЕСКИЙ SIMILARITY THRESHOLD: фильтруем низкокачественные результаты
   // Базовый порог схожести: понижаем для рецептов, чтобы не терять короткие/кулинарные чанки
   const minSimilarity = intent.action === 'recipes' ? MIN_SIMILARITY_RECIPES : MIN_SIMILARITY_DEFAULT;
@@ -460,9 +493,11 @@ export async function POST(req: NextRequest) {
         return content.substring(0, 50).split('\n')[0].trim();
       };
 
+      const { normalizeTitle } = await import('@/lib/search-utils');
       const recipeGroups = new Map<string, any[]>();
       for (const match of matches) {
-        const title = extractRecipeTitle(match.content);
+        const titleRaw = extractRecipeTitle(match.content);
+        const title = normalizeTitle(titleRaw) || titleRaw.substring(0, 50).trim();
         if (!recipeGroups.has(title)) {
           recipeGroups.set(title, []);
         }
