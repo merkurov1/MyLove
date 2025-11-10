@@ -130,6 +130,35 @@ async function getYouTubeTranscript(url: string): Promise<string> {
   }
 }
 
+// Функция для получения описания YouTube видео
+async function getYouTubeVideoInfo(url: string): Promise<{ title: string, description: string }> {
+  try {
+    const response = await axios.get(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+      },
+      timeout: 10000
+    })
+
+    const $ = cheerio.load(response.data)
+    
+    // Извлекаем title из meta tags
+    const title = $('meta[name="title"]').attr('content') || 
+                  $('meta[property="og:title"]').attr('content') || 
+                  $('title').text() || 'YouTube Video'
+    
+    // Извлекаем description из meta tags
+    const description = $('meta[name="description"]').attr('content') || 
+                       $('meta[property="og:description"]').attr('content') || 
+                       'Описание недоступно'
+    
+    return { title, description }
+  } catch (error) {
+    console.error('YouTube video info error:', error)
+    return { title: 'YouTube Video', description: 'Не удалось получить описание' }
+  }
+}
+
 // Функция для скрейпинга веб-страницы
 async function scrapeWebPage(url: string): Promise<string> {
   try {
@@ -339,10 +368,12 @@ export async function POST(request: NextRequest) {
               if (transcriptError.message.includes('субтитры') || transcriptError.message.includes('Transcript')) {
                 console.log(`Субтитры недоступны, пробуем извлечь информацию о видео: ${link}`)
                 try {
-                  // Попытка получить базовую информацию о видео
-                  content = `Информация о YouTube видео: ${link}\n\nЭто видео не имеет доступных субтитров для транскрибации. Для получения полного контента видео рекомендуется найти видео с субтитрами или загрузить текстовую версию содержания.`
+                  // Получаем информацию о видео (title и description)
+                  const videoInfo = await getYouTubeVideoInfo(link)
+                  content = `Информация о YouTube видео: ${link}\n\nНазвание: ${videoInfo.title}\n\nОписание: ${videoInfo.description}\n\nЭто видео не имеет доступных субтитров для транскрибации. Для получения полного контента видео рекомендуется найти видео с субтитрами или загрузить текстовую версию содержания.`
                   metadata.content_type = 'youtube_video_no_transcript'
-                  console.log(`Создан документ с базовой информацией для видео: ${link}`)
+                  metadata.filename = videoInfo.title
+                  console.log(`Создан документ с информацией о видео: ${link}`)
                 } catch (infoError) {
                   console.log(`Не удалось получить информацию о видео: ${link}`)
                   results.push({
