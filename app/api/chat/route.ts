@@ -231,11 +231,11 @@ export async function POST(req: NextRequest) {
     if (lowerQuery.includes('все') || lowerQuery.includes('список') ||
         lowerQuery.includes('find all') || lowerQuery.includes('all') ||
         lowerQuery.includes('все рецепт') || lowerQuery.includes('список рецепт')) {
-      matchCount = 25; // Увеличиваем значительно для поиска всех рецептов
+      matchCount = 50; // Увеличиваем значительно для поиска всех рецептов
       console.log('[SEARCH] "All recipes" query detected, increasing match_count to', matchCount);
     } else if (lowerQuery.includes('рецепт') || lowerQuery.includes('еда') ||
                lowerQuery.includes('блюд') || lowerQuery.includes('кухн')) {
-      matchCount = 12; // Увеличиваем для кулинарных запросов
+      matchCount = 20; // Увеличиваем для кулинарных запросов
       console.log('[SEARCH] Cooking query detected, increasing match_count to', matchCount);
     }
     
@@ -380,8 +380,8 @@ export async function POST(req: NextRequest) {
     }
 
     // DEDUPLICATION: Группируем по document_id, берём лучший чанк из каждого документа
-    // Это особенно важно для multi_analyze, чтобы не было дублей
-    if (matches && matches.length > 0) {
+    // Для рецептов отключаем deduplication, чтобы показать все найденные рецепты
+    if (matches && matches.length > 0 && intent.action !== 'recipes') {
       const docGroups = new Map<string, any[]>();
       
       for (const match of matches) {
@@ -413,6 +413,13 @@ export async function POST(req: NextRequest) {
         .slice(0, 7);
       
       console.log(`[DEDUPLICATION] Reduced from ${docGroups.size} groups to ${matches.length} unique documents`);
+    } else if (intent.action === 'recipes') {
+      // Для рецептов: сортируем по similarity и берем топ результатов без deduplication
+      matches = matches
+        .sort((a, b) => (b.similarity || 0) - (a.similarity || 0))
+        .slice(0, 40); // Больше результатов для рецептов
+      
+      console.log(`[RECIPES] Keeping all ${matches.length} recipe matches (no deduplication)`);
     }
 
     let contextText = '';
