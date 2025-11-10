@@ -4,6 +4,7 @@ import { splitIntoChunks } from '@/lib/chunking';
 import { getEmbeddings } from '@/lib/embedding-ai';
 import crypto from 'crypto';
 import mammoth from 'mammoth';
+const pdfParse = require('pdf-parse');
 
 export const runtime = 'nodejs';
 
@@ -23,7 +24,19 @@ export async function POST(req: NextRequest) {
   
   // Определяем тип файла и парсим соответственно
   const fileName = file.name.toLowerCase();
-  if (fileName.endsWith('.docx')) {
+  if (fileName.endsWith('.pdf')) {
+    console.log(`[${new Date().toISOString()}] Parsing .pdf file with pdf-parse`);
+    try {
+      const pdfData = await pdfParse(Buffer.from(arrayBuffer));
+      text = pdfData.text;
+    } catch (error: any) {
+      console.error('[Ingest] Error parsing .pdf:', error);
+      return NextResponse.json({
+        error: 'Не удалось прочитать PDF файл',
+        details: error.message
+      }, { status: 400 });
+    }
+  } else if (fileName.endsWith('.docx')) {
     console.log(`[${new Date().toISOString()}] Parsing .docx file with mammoth`);
     try {
       const result = await mammoth.extractRawText({ buffer: Buffer.from(arrayBuffer) });
