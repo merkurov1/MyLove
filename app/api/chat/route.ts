@@ -86,6 +86,9 @@ export async function POST(req: NextRequest) {
     } else if (mentionsCV) {
       expandedQuery = query + ' резюме опыт работы карьера образование навыки';
       console.log('[QUERY EXPANSION] Expanded for CV:', expandedQuery);
+    } else if (lowerQuery.includes('рецепт') || lowerQuery.includes('еда') || lowerQuery.includes('кулинар')) {
+      expandedQuery = query + ' кулинария готовить блюдо ингредиенты';
+      console.log('[QUERY EXPANSION] Expanded for recipes:', expandedQuery);
     }
 
     // 2. Получить embedding для расширенного запроса через Vercel AI SDK
