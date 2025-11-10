@@ -3,8 +3,9 @@ import { supabase } from '@/utils/supabase/server';
 import { splitIntoChunks } from '@/lib/chunking';
 import { getEmbeddings } from '@/lib/embedding-ai';
 import crypto from 'crypto';
-import mammoth from 'mammoth';
-const pdfParse = require('pdf-parse');
+// Defer optional/heavy modules (mammoth, pdf-parse) to runtime to avoid
+// build-time failures in serverless environments. They will be required
+// lazily inside the handler when needed.
 const fs = require('fs')
 const os = require('os')
 const path = require('path')
@@ -41,8 +42,21 @@ export async function POST(req: NextRequest) {
   if (fileName.endsWith('.pdf')) {
     console.log(`[${new Date().toISOString()}] Parsing .pdf file with pdf-parse`);
     try {
-      const pdfData = await pdfParse(Buffer.from(arrayBuffer));
-      text = pdfData.text;
+      // Lazy-require pdf-parse so route doesn't fail if module isn't available at build-time
+      let pdfParse: any = null
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        pdfParse = require('pdf-parse')
+      } catch (modErr) {
+        console.warn('[Ingest] pdf-parse module not available:', modErr)
+      }
+
+      if (pdfParse) {
+        const pdfData = await pdfParse(Buffer.from(arrayBuffer));
+        text = pdfData.text;
+      } else {
+        throw new Error('pdf-parse module not available')
+      }
     } catch (error: any) {
       console.error('[Ingest] pdf-parse failed:', error && error.stack ? error.stack : error);
       // Fallback: try pdfjs-dist text extraction for PDFs that pdf-parse can't handle
@@ -148,16 +162,26 @@ export async function POST(req: NextRequest) {
   } else if (fileName.endsWith('.docx')) {
     console.log(`[${new Date().toISOString()}] Parsing .docx file with mammoth`);
     try {
+      // Lazy-require mammoth to avoid build-time module resolution issues
+      let mammoth: any = null
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        mammoth = require('mammoth')
+      } catch (modErr) {
+        console.warn('[Ingest] mammoth module not available:', modErr)
+        return NextResponse.json({ error: 'mammoth module not available on server' }, { status: 500 })
+      }
+
       const result = await mammoth.extractRawText({ buffer: Buffer.from(arrayBuffer) });
       text = result.value;
-      if (result.messages.length > 0) {
+      if (result.messages && result.messages.length > 0) {
         console.warn('[Ingest] Mammoth warnings:', result.messages);
       }
     } catch (error: any) {
       console.error('[Ingest] Error parsing .docx:', error);
       return NextResponse.json({ 
         error: 'Не удалось прочитать .docx файл', 
-        details: error.message 
+        details: error?.message || String(error)
       }, { status: 400 });
     }
   } else {

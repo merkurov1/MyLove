@@ -53,38 +53,67 @@ function calculateChecksum(text: string): string {
 async function getYouTubeTranscript(url: string): Promise<string> {
   try {
     // Попытка извлечь id видео
-    const idMatch = url.match(/(?:v=|\/|be\/)([A-Za-z0-9_-]{11})/)
-    const videoId = idMatch ? idMatch[1] : null
+    const parseVideoId = (u: string): string | null => {
+      try {
+        const parsed = new URL(u)
+        // ?v= ID
+        const v = parsed.searchParams.get('v')
+        if (v && v.length === 11) return v
+        // youtu.be short link -> pathname
+        if (parsed.hostname.includes('youtu.be')) {
+          const p = parsed.pathname.replace('/', '')
+          if (p && p.length >= 11) return p.split('/')[0]
+        }
+        // watch path contains v in params; embed/shorts paths contain id in pathname
+        const pathParts = parsed.pathname.split('/').filter(Boolean)
+        // /embed/{id} or /shorts/{id}
+        if (pathParts.length && (pathParts[0] === 'embed' || pathParts[0] === 'shorts')) {
+          const candidate = pathParts[1]
+          if (candidate && candidate.length >= 11) return candidate
+        }
+        // Fallback regex
+        const idMatch = u.match(/([A-Za-z0-9_-]{11})/)
+        return idMatch ? idMatch[1] : null
+      } catch (e) {
+        const idMatch = url.match(/([A-Za-z0-9_-]{11})/)
+        return idMatch ? idMatch[1] : null
+      }
+    }
+
+    const videoId = parseVideoId(url)
     if (!videoId) {
       throw new Error('Не удалось распознать id видео в URL')
     }
 
     // Динамически импортируем библиотеку, т.к. в среде сборки могут быть разные схемы экспорта
-    let ytModule: any = null
+    // Dynamic import / require with fallbacks and multiple export shapes
+    let mod: any = null
     try {
-      ytModule = await import('youtube-transcript')
+      mod = await import('youtube-transcript')
     } catch (e) {
       try {
         // eslint-disable-next-line @typescript-eslint/no-var-requires
-        ytModule = require('youtube-transcript')
+        mod = require('youtube-transcript')
       } catch (err) {
         console.warn('youtube-transcript module not available:', err)
-        ytModule = null
+        mod = null
       }
     }
 
-    if (!ytModule) {
-      throw new Error('Модуль youtube-transcript не установлен')
-    }
+    if (!mod) throw new Error('Модуль youtube-transcript не установлен')
 
-    // The package exports a class `YoutubeTranscript` with a static method `fetchTranscript`.
-    const YT = ytModule.YoutubeTranscript || ytModule.default?.YoutubeTranscript
-    if (!YT || typeof YT.fetchTranscript !== 'function') {
-      throw new Error('Не удалось получить метод fetchTranscript из youtube-transcript')
-    }
+    // Normalize possible export shapes to a transcript function
+    let transcriptFn: any = null
+    if (typeof mod === 'function') transcriptFn = mod
+    else if (typeof mod.fetchTranscript === 'function') transcriptFn = mod.fetchTranscript
+    else if (mod.YoutubeTranscript && typeof mod.YoutubeTranscript.fetchTranscript === 'function') transcriptFn = mod.YoutubeTranscript.fetchTranscript
+    else if (mod.default && typeof mod.default.fetchTranscript === 'function') transcriptFn = mod.default.fetchTranscript
+    else if (mod.default && typeof mod.default === 'function') transcriptFn = mod.default
+    
+    if (!transcriptFn) throw new Error('Не удалось получить метод fetchTranscript из youtube-transcript')
 
-    // fetchTranscript accepts video id or full URL
-    const transcriptResponse = await YT.fetchTranscript(videoId)
+    // call the normalized function
+    const transcriptResponse = await transcriptFn(videoId)
     if (!transcriptResponse) throw new Error('youtube-transcript вернул пустой ответ')
     if (Array.isArray(transcriptResponse)) {
       return transcriptResponse.map((seg: any) => seg.text).join(' ')

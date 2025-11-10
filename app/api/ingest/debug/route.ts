@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import mammoth from 'mammoth'
-const pdfParse = require('pdf-parse')
+// Defer optional heavy modules until runtime
 const fs = require('fs')
 const os = require('os')
 const path = require('path')
@@ -33,15 +32,26 @@ export async function POST(req: NextRequest) {
     const file = form.get('file') as File | null
     if (!file) return NextResponse.json({ error: 'file is required' }, { status: 400 })
 
-    const arrayBuffer = await file.arrayBuffer()
-    const buf = Buffer.from(arrayBuffer)
+  const arrayBuffer = await file.arrayBuffer()
+  const buf = Buffer.from(arrayBuffer)
 
     const result: any = { filename: file.name, size: file.size }
 
     // 1) pdf-parse
     try {
-      const pd = await pdfParse(buf)
-      result.pdfParse = { ok: true, textSample: String(pd.text || '').slice(0, 2000), length: (pd.text||'').length }
+      let pdfParse: any = null
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        pdfParse = require('pdf-parse')
+      } catch (modErr) {
+        result.pdfParse = { ok: false, error: 'pdf-parse module not available', details: String(modErr) }
+        pdfParse = null
+      }
+
+      if (pdfParse) {
+        const pd = await pdfParse(buf)
+        result.pdfParse = { ok: true, textSample: String(pd.text || '').slice(0, 2000), length: (pd.text||'').length }
+      }
     } catch (err: any) {
       result.pdfParse = { ok: false, error: String(err.message || err), stack: err.stack }
     }
@@ -63,7 +73,7 @@ export async function POST(req: NextRequest) {
       result.pdfjs = { ok: false, error: String(err.message || err), stack: err.stack }
     }
 
-    // 3) OCR fallback (pdftoppm + tesseract) but only if CLI present
+  // 3) OCR fallback (pdftoppm + tesseract) but only if CLI present
     const havePdftoppm = isCmdAvailable('pdftoppm')
     const haveTesseract = isCmdAvailable('tesseract')
     result.ocrCli = { pdftoppm: havePdftoppm, tesseract: haveTesseract }
