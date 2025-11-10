@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getEmbedding } from '@/lib/embedding-ai'
+// getEmbedding is imported lazily inside processAndSaveChunks to avoid
+// initializing the OpenAI/Vercel SDK at module load time in serverless environments.
 import { supabase } from '@/utils/supabase/server'
 import crypto from 'crypto'
 import axios from 'axios'
@@ -212,6 +213,19 @@ async function processAndSaveChunks(
       
       // Генерируем эмбеддинг
       console.log(`Chunk ${i + 1}: generating embedding...`)
+      // Lazy-load embedding function
+      let getEmbedding: any = null
+      try {
+        getEmbedding = (await import('../../../lib/embedding-ai')).getEmbedding
+      } catch (e) {
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-var-requires
+          getEmbedding = require('../../../lib/embedding-ai').getEmbedding
+        } catch (err) {
+          throw new Error('Embedding helper unavailable: ' + String(e || err))
+        }
+      }
+
       const embedding = await getEmbedding(chunk)
       if (!Array.isArray(embedding) || embedding.length !== 1536) {
         throw new Error(`Embedding must be an array of 1536 numbers, got: ${embedding && embedding.length}`)

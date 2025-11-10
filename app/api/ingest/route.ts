@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/utils/supabase/server';
 import { splitIntoChunks } from '@/lib/chunking';
-import { getEmbeddings } from '@/lib/embedding-ai';
+// Note: getEmbeddings is imported lazily inside the handler to avoid
+// initialization/build-time issues with the OpenAI/Vercel SDK in serverless envs.
 import crypto from 'crypto';
 // Defer optional/heavy modules (mammoth, pdf-parse) to runtime to avoid
 // build-time failures in serverless environments. They will be required
@@ -214,6 +215,22 @@ export async function POST(req: NextRequest) {
   try {
     // Получаем эмбеддинги для чанков через Vercel AI SDK
     console.log(`[${new Date().toISOString()}] Generating embeddings with OpenAI...`);
+    // Lazy-import embedding helper to avoid bundling issues at module load time
+    let getEmbeddings: any = null
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      getEmbeddings = (await import('../../../lib/embedding-ai')).getEmbeddings
+    } catch (e) {
+      try {
+        // Fallback to require (CommonJS)
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        getEmbeddings = require('../../../lib/embedding-ai').getEmbeddings
+      } catch (err) {
+        console.error('[Ingest] Failed to load embedding helper:', e || err)
+        return NextResponse.json({ error: 'Embedding helper unavailable', details: String(e || err) }, { status: 500 })
+      }
+    }
+
     const embeddings: number[][] = await getEmbeddings(chunks);
     
     if (!embeddings || embeddings.length !== chunks.length) {
