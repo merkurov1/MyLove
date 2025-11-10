@@ -39,7 +39,58 @@ export async function POST(req: NextRequest) {
     const intent = detectIntent(query);
     console.log(`[${new Date().toISOString()}] Detected intent:`, intent);
 
-    // 1. Query expansion для улучшения поиска
+    // 1. Multi-query retrieval: генерируем несколько вариантов запроса
+    console.log(`[${new Date().toISOString()}] Generating multiple query variants...`);
+    let queryVariants = [query];
+    
+    // ЭКОНОМИЯ: отключаем для очень коротких запросов (< 10 символов) или если установлена переменная окружения
+    const enableMultiQuery = query.length >= 10 && !process.env.DISABLE_MULTI_QUERY;
+    console.log(`[${new Date().toISOString()}] Multi-query ${enableMultiQuery ? 'ENABLED' : 'DISABLED'} for query length: ${query.length}`);
+    
+    if (enableMultiQuery) {
+      try {
+      // Генерируем 2-3 дополнительных варианта запроса через LLM
+      const multiQueryPrompt = `Ты — помощник для улучшения поиска. Создай 2-3 альтернативных формулировок этого запроса для более эффективного поиска в базе знаний. 
+
+Оригинальный запрос: "${query}"
+
+Создай варианты, которые:
+- Используют синонимы
+- Расширяют контекст
+- Учитывают разные способы формулировки
+- Сохраняют основной смысл
+
+Верни только варианты запросов, по одному на строку, без нумерации или дополнительных комментариев.`;
+
+      const multiQueryResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: 'gpt-4o-mini',
+          messages: [{ role: 'user', content: multiQueryPrompt }],
+          temperature: 0.3,
+          max_tokens: 200
+        })
+      });
+
+      if (multiQueryResponse.ok) {
+        const multiQueryData = await multiQueryResponse.json();
+        const variantsText = multiQueryData.choices[0]?.message?.content?.trim();
+        if (variantsText) {
+          const variants = variantsText.split('\n').filter((v: string) => v.trim().length > 0).slice(0, 3);
+          queryVariants = [query, ...variants];
+          console.log('[MULTI-QUERY] Generated variants:', queryVariants);
+        }
+      }
+    } catch (multiQueryError) {
+      console.log('[MULTI-QUERY] Failed to generate variants, using original query only');
+    }
+    }
+
+    // 2. Query expansion для улучшения поиска
     let expandedQuery = query;
     const lowerQuery = query.toLowerCase();
     
@@ -91,23 +142,31 @@ export async function POST(req: NextRequest) {
       console.log('[QUERY EXPANSION] Expanded for recipes:', expandedQuery);
     }
 
-    // 2. Получить embedding для расширенного запроса через Vercel AI SDK
+    // 3. Получить embeddings для всех вариантов запроса
     const searchStartTime = Date.now();
-    console.log(`[${new Date().toISOString()}] Generating query embedding with OpenAI...`);
-    let queryEmbedding: number[];
-    try {
-      queryEmbedding = await getEmbedding(expandedQuery);
-      console.log(`[${new Date().toISOString()}] Query embedding generated (dimension: ${queryEmbedding.length})`);
-    } catch (embedErr: any) {
-      console.error('[EMBEDDING ERROR]', {
-        error: embedErr?.message,
-        stack: embedErr?.stack
-      });
+    console.log(`[${new Date().toISOString()}] Generating embeddings for ${queryVariants.length} query variants...`);
+    
+    const queryEmbeddings: number[][] = [];
+    for (const variant of queryVariants) {
+      try {
+        const embedding = await getEmbedding(variant);
+        queryEmbeddings.push(embedding);
+        console.log(`[${new Date().toISOString()}] Generated embedding for variant: "${variant.substring(0, 50)}..."`);
+      } catch (embedErr: any) {
+        console.error('[EMBEDDING ERROR] for variant:', variant, embedErr?.message);
+        // Если embedding для варианта не удался, пропускаем его
+      }
+    }
+    
+    if (queryEmbeddings.length === 0) {
       return NextResponse.json({
-        error: 'Ошибка при создании embedding',
-        message: embedErr?.message
+        error: 'Не удалось создать embeddings для запроса',
+        message: 'Ошибка при обработке запроса'
       }, { status: 500 });
     }
+    
+    // Используем первый embedding как основной для совместимости
+    const primaryEmbedding = queryEmbeddings[0];
 
     // 3. Найти релевантные документы через Supabase
     const supabase = createClient(
@@ -148,56 +207,87 @@ export async function POST(req: NextRequest) {
       console.log('[HYBRID] Analytical query, using semantic_weight=0.8');
     }
     
-    // Для гибридного поиска используем ОБА запроса:
-    // - query (original) для keyword matching (точные совпадения "Новая Газета")
-    // - expandedQuery embedding для semantic matching (расширенный контекст)
-    let { data: matches, error } = await supabase.rpc('hybrid_search', {
-      query_text: query,  // Оригинал для keyword matching
-      query_embedding: queryEmbedding,  // Расширенный для semantic
-      match_count: matchCount,
-      keyword_weight,
-      semantic_weight
-    });
+    // 4. Найти релевантные документы через multi-query поиск
+    // Собираем результаты из всех вариантов запросов
+    const allMatches: any[] = [];
+    const seenDocumentIds = new Set<string>();
     
-    // Fallback на обычный векторный если гибридный недоступен
-    if (error && error.message?.includes('function hybrid_search')) {
-      console.log('[SEARCH] Hybrid search not available, falling back to vector-only');
-      ({ data: matches, error } = await supabase.rpc('match_documents', {
-        query_embedding: queryEmbedding,
-        match_count: matchCount
-      }));
-    }
+    for (let i = 0; i < queryEmbeddings.length; i++) {
+      const embedding = queryEmbeddings[i];
+      const variantQuery = queryVariants[i];
+      
+      console.log(`[MULTI-QUERY] Searching with variant ${i + 1}/${queryEmbeddings.length}: "${variantQuery.substring(0, 50)}..."`);
+      
+      let { data: matches, error } = await supabase.rpc('hybrid_search', {
+        query_text: variantQuery,  // Используем соответствующий вариант для keyword matching
+        query_embedding: embedding,
+        match_count: matchCount,
+        keyword_weight,
+        semantic_weight
+      });
+      
+      // Fallback на обычный векторный если гибридный недоступен
+      if (error && error.message?.includes('function hybrid_search')) {
+        console.log('[SEARCH] Hybrid search not available, falling back to vector-only');
+        ({ data: matches, error } = await supabase.rpc('match_documents', {
+          query_embedding: embedding,
+          match_count: matchCount
+        }));
+      }
 
-    console.log(`[${new Date().toISOString()}] Search completed (hybrid)`);
-    const topSimilarity = matches?.[0]?.similarity || 0;
-    console.log('[RPC RESULT]', { 
-      matchesCount: matches?.length || 0, 
-      error: error?.message,
+      if (error) {
+        console.error('[SUPABASE RPC ERROR]', { error: error.message, full: error });
+        continue; // Пропускаем этот вариант, но продолжаем с другими
+      }
+      
+      if (matches) {
+        // Добавляем только уникальные документы, не виденные ранее
+        for (const match of matches) {
+          const docId = match.document_id || match.id;
+          if (!seenDocumentIds.has(docId)) {
+            seenDocumentIds.add(docId);
+            allMatches.push(match);
+          }
+        }
+      }
+    }
+    
+    console.log(`[${new Date().toISOString()}] Multi-query search completed. Total unique matches: ${allMatches.length}`);
+    const topSimilarity = allMatches[0]?.similarity || 0;
+    console.log('[MULTI-QUERY RESULT]', { 
+      totalVariants: queryEmbeddings.length,
+      uniqueMatches: allMatches.length, 
       topSimilarity,
-      firstMatch: matches?.[0] ? { 
-        id: matches[0].id, 
-        similarity: matches[0].similarity,
-        contentPreview: matches[0].content?.substring(0, 100) 
+      firstMatch: allMatches[0] ? { 
+        id: allMatches[0].id, 
+        similarity: allMatches[0].similarity,
+        contentPreview: allMatches[0].content?.substring(0, 100) 
       } : null
     });
     
     // Fallback: если similarity < 0.35, загрузим больше чанков для лучшего контекста
-    if (topSimilarity < 0.35 && matches && matches.length > 0) {
+    if (topSimilarity < 0.35 && allMatches && allMatches.length > 0) {
       console.log('[FALLBACK] Low similarity, expanding search to 12 chunks...');
       const { data: expandedMatches } = await supabase.rpc('match_documents', {
-        query_embedding: queryEmbedding,
+        query_embedding: primaryEmbedding,
         match_count: 12
       });
       if (expandedMatches) {
-        matches.length = 0;
-        matches.push(...expandedMatches);
+        allMatches.length = 0;
+        allMatches.push(...expandedMatches);
       }
     }
 
-    if (error) {
-      console.error('[SUPABASE RPC ERROR]', { error: error.message, full: error });
-      return NextResponse.json({ error: error.message, supabase: true }, { status: 500 });
+    // Если все варианты поиска провалились, возвращаем ошибку
+    if (allMatches.length === 0) {
+      console.error('[SEARCH] No matches found from any query variant');
+      return NextResponse.json({ 
+        error: 'Не найдено релевантных документов', 
+        message: 'Попробуйте переформулировать запрос' 
+      }, { status: 404 });
     }
+
+    let matches = allMatches;
 
     // RERANKING: Используем LLM для переранжирования результатов ТОЛЬКО для сложных случаев
     // Экономия бюджета: только если similarity < 0.5 (неуверенный поиск)
