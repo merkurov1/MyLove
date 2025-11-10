@@ -15,6 +15,7 @@ import {
   RELAXED_MIN_DELTA,
   RELAXED_MIN_FLOOR,
   RERANK_SIMILARITY_THRESHOLD
+  , MIN_LENGTH_RECIPES, MIN_LENGTH_ANALYZE, MIN_LENGTH_DEFAULT, RECIPE_MIN_RESULTS
 } from '@/lib/search-config';
 import { createClient } from '@supabase/supabase-js';
 import { detectIntent, AGENT_PROMPTS, formatResponseWithSources, extractCitations } from '@/lib/agent-actions';
@@ -478,7 +479,7 @@ export async function POST(req: NextRequest) {
       // Сортируем по similarity и ограничиваем
       matches = deduplicatedRecipes
         .sort((a, b) => (b.similarity || 0) - (a.similarity || 0))
-        .slice(0, Math.max(30, matchCount)); // Максимум зависит от matchCount (минимум 30)
+  .slice(0, Math.max(RECIPE_MIN_RESULTS, matchCount)); // Максимум зависит от matchCount (минимум RECIPE_MIN_RESULTS)
 
       console.log(`[RECIPES] Smart deduplication: ${recipeGroups.size} recipe groups → ${matches.length} unique recipes`);
     }
@@ -522,14 +523,14 @@ export async function POST(req: NextRequest) {
       const isJournalismQuery = lowerQuery.includes('новая газета') || lowerQuery.includes('новой газете') ||
                                lowerQuery.includes('колонк') || lowerQuery.includes('публикац');
 
-      // Relaxed quality thresholds for recipes and journalism
-      const minSimilarityThreshold = isRecipesQuery ? 0.2 :
-                                   isJournalismQuery ? 0.35 : 0.3;
+      // Relaxed quality thresholds for recipes and journalism (centralized)
+      const minSimilarityThreshold = isRecipesQuery ? MIN_SIMILARITY_RECIPES :
+                                   isJournalismQuery ? MIN_SIMILARITY_JOURNALISM : MIN_SIMILARITY_DEFAULT;
 
       const qualityFilters = {
         minSimilarity: minSimilarityThreshold,
         // Рецепты часто хранятся в коротких чанках — разрешаем меньшую длину
-        minLength: isRecipesQuery ? 10 : (intent.action === 'analyze' ? 100 : 50),
+        minLength: isRecipesQuery ? MIN_LENGTH_RECIPES : (intent.action === 'analyze' ? MIN_LENGTH_ANALYZE : MIN_LENGTH_DEFAULT),
         hasContent: true
       };
 

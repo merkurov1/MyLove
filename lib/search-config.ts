@@ -31,6 +31,12 @@ export const RERANK_LLM_WEIGHT = 0.6; // weight for LLM rerank score when mixing
 
 export const RECIPE_CONTEXT_LIMIT = 16000;
 
+export const MIN_LENGTH_RECIPES = 10;
+export const MIN_LENGTH_ANALYZE = 100;
+export const MIN_LENGTH_DEFAULT = 50;
+
+export const RECIPE_MIN_RESULTS = 30;
+
 export default {
   EMBEDDING_DIMENSION,
   DEFAULT_MATCH_COUNT,
@@ -48,4 +54,11 @@ export default {
   RERANK_EMBEDDING_WEIGHT,
   RERANK_LLM_WEIGHT,
   RECIPE_CONTEXT_LIMIT
+};
+
+export const EXTRA = {
+  MIN_LENGTH_RECIPES,
+  MIN_LENGTH_ANALYZE,
+  MIN_LENGTH_DEFAULT,
+  RECIPE_MIN_RESULTS
 };
