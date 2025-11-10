@@ -42,14 +42,20 @@ export async function DELETE(request: NextRequest) {
     }
     
     console.log('[Documents DELETE] Deleting document:', id)
-    const { error } = await supabase.from('documents').delete().eq('id', id)
-    
+    // Attempt delete and return deleted row(s) for visibility
+    const { data: deleted, error, status } = await supabase
+      .from('documents')
+      .delete()
+      .eq('id', id)
+      .select()
+
     if (error) {
       console.error('[Documents DELETE] Error:', error)
-      return NextResponse.json({ error: error.message }, { status: 500 })
+      return NextResponse.json({ error: error.message, details: error }, { status: status || 500 })
     }
-    
-    return NextResponse.json({ success: true })
+
+    console.log('[Documents DELETE] Deleted rows:', deleted)
+    return NextResponse.json({ success: true, deleted })
   } catch (err: any) {
     console.error('[Documents DELETE] Exception:', err)
     return NextResponse.json({ error: err.message || 'Server error' }, { status: 500 })
