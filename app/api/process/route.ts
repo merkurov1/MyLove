@@ -77,18 +77,19 @@ async function getYouTubeTranscript(url: string): Promise<string> {
       throw new Error('Модуль youtube-transcript не установлен')
     }
 
-    const getTranscriptFn = ytModule.getTranscript || ytModule.default?.getTranscript || ytModule.default || ytModule
-    if (typeof getTranscriptFn !== 'function') {
-      throw new Error('Не удалось получить функцию транскрипции из модуля youtube-transcript')
+    // The package exports a class `YoutubeTranscript` with a static method `fetchTranscript`.
+    const YT = ytModule.YoutubeTranscript || ytModule.default?.YoutubeTranscript
+    if (!YT || typeof YT.fetchTranscript !== 'function') {
+      throw new Error('Не удалось получить метод fetchTranscript из youtube-transcript')
     }
 
-    // Вызов функции и объединение сегментов в единый текст
-    const transcript = await getTranscriptFn(videoId)
-    if (Array.isArray(transcript)) {
-      return transcript.map((seg: any) => seg.text).join(' ')
+    // fetchTranscript accepts video id or full URL
+    const transcriptResponse = await YT.fetchTranscript(videoId)
+    if (!transcriptResponse) throw new Error('youtube-transcript вернул пустой ответ')
+    if (Array.isArray(transcriptResponse)) {
+      return transcriptResponse.map((seg: any) => seg.text).join(' ')
     }
-    if (typeof transcript === 'string') return transcript
-
+    if (typeof transcriptResponse === 'string') return transcriptResponse
     throw new Error('Не удалось получить транскрипцию из youtube-transcript')
   } catch (error: any) {
     console.error('YouTube transcript error:', error)
