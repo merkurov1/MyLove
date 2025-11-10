@@ -5,6 +5,10 @@ import { getEmbeddings } from '@/lib/embedding-ai';
 import crypto from 'crypto';
 import mammoth from 'mammoth';
 const pdfParse = require('pdf-parse');
+const fs = require('fs')
+const os = require('os')
+const path = require('path')
+const child_process = require('child_process')
 
 export const runtime = 'nodejs';
 
@@ -49,10 +53,47 @@ export async function POST(req: NextRequest) {
         console.log('[Ingest] pdfjs-dist fallback succeeded, length:', text.length);
       } catch (fallbackError: any) {
         console.error('[Ingest] pdfjs-dist fallback failed:', fallbackError && fallbackError.stack ? fallbackError.stack : fallbackError);
-        return NextResponse.json({
-          error: 'Не удалось прочитать PDF файл',
-          details: String(error?.message || error) + ' | fallback: ' + String(fallbackError?.message || fallbackError)
-        }, { status: 400 });
+        // Последний фолбек: попытаться OCR через pdftoppm -> tesseract (CLI)
+        try {
+          console.log('[Ingest] Attempting OCR fallback using pdftoppm + tesseract (requires poppler-utils and tesseract installed)');
+          const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mylove-pdf-'))
+          const pdfPath = path.join(tmpDir, 'upload.pdf')
+          fs.writeFileSync(pdfPath, Buffer.from(arrayBuffer))
+
+          // Convert PDF pages to PNGs using pdftoppm
+          const pdftoppm = child_process.spawnSync('pdftoppm', ['-png', pdfPath, path.join(tmpDir, 'page')], { timeout: 60_000 })
+          if (pdftoppm.error) throw pdftoppm.error
+          if (pdftoppm.status !== 0) {
+            console.warn('[Ingest] pdftoppm stderr:', pdftoppm.stderr && pdftoppm.stderr.toString())
+          }
+
+          const images = fs.readdirSync(tmpDir).filter((f: string) => f.endsWith('.png')).sort()
+          if (!images.length) throw new Error('pdftoppm did not produce images')
+
+          let ocrText = ''
+          for (const img of images) {
+            const imgPath = path.join(tmpDir, img)
+            // Run tesseract CLI and capture stdout
+            const tesseract = child_process.spawnSync('tesseract', [imgPath, 'stdout', '-l', 'eng+rus'], { encoding: 'utf-8', timeout: 120_000 })
+            if (tesseract.error) throw tesseract.error
+            if (tesseract.status !== 0) {
+              console.warn('[Ingest] tesseract stderr:', tesseract.stderr)
+            }
+            ocrText += (tesseract.stdout || '') + '\n\n'
+          }
+
+          // Cleanup temp files
+          try { fs.rmSync(tmpDir, { recursive: true, force: true }) } catch (e) { /* ignore */ }
+
+          text = ocrText.trim()
+          console.log('[Ingest] OCR fallback succeeded, text length:', text.length)
+        } catch (ocrErr: any) {
+          console.error('[Ingest] OCR fallback failed:', ocrErr && ocrErr.stack ? ocrErr.stack : ocrErr)
+          return NextResponse.json({
+            error: 'Не удалось прочитать PDF файл',
+            details: String(error?.message || error) + ' | fallback: ' + String(fallbackError?.message || fallbackError) + ' | ocr: ' + String(ocrErr?.message || ocrErr)
+          }, { status: 400 })
+        }
       }
     }
   } else if (fileName.endsWith('.docx')) {
