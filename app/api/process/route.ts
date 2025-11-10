@@ -335,15 +335,23 @@ export async function POST(request: NextRequest) {
               content = await getYouTubeTranscript(link)
               metadata.content_type = 'youtube_video'
             } catch (transcriptError: any) {
-              // Если субтитры недоступны, пропускаем видео
+              // Если субтитры недоступны, пробуем извлечь информацию о видео
               if (transcriptError.message.includes('субтитры') || transcriptError.message.includes('Transcript')) {
-                console.log(`Пропускаем YouTube видео без субтитров: ${link}`)
-                results.push({
-                  url: link,
-                  success: false,
-                  error: 'У видео нет доступных субтитров'
-                })
-                continue
+                console.log(`Субтитры недоступны, пробуем извлечь информацию о видео: ${link}`)
+                try {
+                  // Попытка получить базовую информацию о видео
+                  content = `Информация о YouTube видео: ${link}\n\nЭто видео не имеет доступных субтитров для транскрибации. Для получения полного контента видео рекомендуется найти видео с субтитрами или загрузить текстовую версию содержания.`
+                  metadata.content_type = 'youtube_video_no_transcript'
+                  console.log(`Создан документ с базовой информацией для видео: ${link}`)
+                } catch (infoError) {
+                  console.log(`Не удалось получить информацию о видео: ${link}`)
+                  results.push({
+                    url: link,
+                    success: false,
+                    error: 'Не удалось получить субтитры или информацию о видео'
+                  })
+                  continue
+                }
               } else {
                 // Другие ошибки (неправильный URL и т.д.) - выбрасываем
                 throw transcriptError
