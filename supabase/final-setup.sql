@@ -33,7 +33,7 @@ ON CONFLICT (name) DO NOTHING;
 CREATE TABLE documents (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   content TEXT NOT NULL,
-  embedding vector(384), -- Hugging Face all-MiniLM-L6-v2 имеет размерность 384
+  embedding vector(1536), -- OpenAI text-embedding-3-small имеет размерность 1536
   checksum TEXT NOT NULL UNIQUE,
   source_id UUID REFERENCES sources(id) ON DELETE CASCADE,
   metadata JSONB DEFAULT '{}',
@@ -52,7 +52,7 @@ CREATE INDEX idx_documents_embedding ON documents USING ivfflat (embedding vecto
 
 -- Функция для поиска похожих документов (универсальная)
 CREATE OR REPLACE FUNCTION search_documents(
-  query_embedding vector(384),
+  query_embedding vector(1536),
   match_threshold float DEFAULT 0.5,
   match_count int DEFAULT 10,
   filter_source_id uuid DEFAULT NULL
@@ -87,7 +87,7 @@ $$;
 
 -- Функция match_documents для совместимости с существующим кодом
 CREATE OR REPLACE FUNCTION match_documents(
-  query_embedding vector(384),
+  query_embedding vector(1536),
   match_count int DEFAULT 7
 )
 RETURNS TABLE (
@@ -144,7 +144,7 @@ COMMENT ON TABLE sources IS 'Источники данных для катего
 COMMENT ON TABLE documents IS 'Документы с векторными эмбеддингами для семантического поиска';
 
 COMMENT ON COLUMN documents.content IS 'Текстовое содержимое документа или чанка';
-COMMENT ON COLUMN documents.embedding IS 'Векторное представление содержимого (384 размерность для HuggingFace all-MiniLM-L6-v2)';
+COMMENT ON COLUMN documents.embedding IS 'Векторное представление содержимого (1536 размерность для OpenAI text-embedding-3-small)';
 COMMENT ON COLUMN documents.checksum IS 'SHA256 хеш содержимого для предотвращения дубликатов';
 COMMENT ON COLUMN documents.metadata IS 'Дополнительные метаданные (URL, заголовок, тип источника и т.д.)';
 COMMENT ON COLUMN documents.embedding_provider IS 'Провайдер эмбеддингов (huggingface, ollama, openai, cohere)';

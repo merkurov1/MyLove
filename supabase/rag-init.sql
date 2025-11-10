@@ -9,13 +9,12 @@ CREATE TABLE IF NOT EXISTS documents (
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
--- 2. Таблица document_chunks
 CREATE TABLE IF NOT EXISTS document_chunks (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   document_id UUID REFERENCES documents(id) ON DELETE CASCADE,
   chunk_index INT NOT NULL,
   content TEXT NOT NULL,
-  embedding VECTOR(768) NOT NULL,
+  embedding VECTOR(1536) NOT NULL,
   checksum TEXT NOT NULL,
   created_at TIMESTAMPTZ DEFAULT now()
 );
@@ -38,16 +37,15 @@ CREATE TABLE IF NOT EXISTS messages (
   conversation_id UUID REFERENCES conversations(id) ON DELETE CASCADE,
   sender TEXT NOT NULL,
   content TEXT NOT NULL,
-  embedding VECTOR(768),
+  embedding VECTOR(1536),
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS idx_messages_conversation_id ON messages(conversation_id);
 CREATE INDEX IF NOT EXISTS idx_messages_embedding ON messages USING hnsw (embedding vector_l2_ops);
 
--- 5. Функция гибридного поиска
 CREATE OR REPLACE FUNCTION hybrid_search_chunks(
-  query_embedding vector(768),
+  query_embedding vector(1536),
   query_text text,
   match_count int DEFAULT 10
 )
@@ -56,7 +54,7 @@ RETURNS TABLE (
   document_id uuid,
   chunk_index int,
   content text,
-  embedding vector(768),
+  embedding vector(1536),
   checksum text,
   created_at timestamptz,
   l2_distance float,
@@ -85,9 +83,8 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql STABLE;
 
--- Совместимая функция match_documents для кода/клиентов, ожидающих старое имя
 CREATE OR REPLACE FUNCTION match_documents(
-  query_embedding vector(768),
+  query_embedding vector(1536),
   match_count int DEFAULT 10
 )
 RETURNS TABLE (
@@ -95,7 +92,7 @@ RETURNS TABLE (
   document_id uuid,
   chunk_index int,
   content text,
-  embedding vector(768),
+  embedding vector(1536),
   checksum text,
   created_at timestamptz,
   l2_distance float,

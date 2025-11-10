@@ -13,11 +13,11 @@ INSERT INTO sources (id, name, description) VALUES
 ('c5aab739-7112-4360-be9e-45edf4287c42', 'Основной источник', 'Основной источник документов для AI-ассистента')
 ON CONFLICT (id) DO NOTHING;
 
--- Таблица документов с векторными эмбеддингами (384 измерения для all-MiniLM-L6-v2)
+-- Таблица документов с векторными эмбеддингами (1536 измерений для OpenAI text-embedding-3-small)
 CREATE TABLE documents (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   content TEXT NOT NULL,
-  embedding vector(384), -- Hugging Face all-MiniLM-L6-v2 имеет размерность 384
+  embedding vector(1536), -- OpenAI text-embedding-3-small имеет размерность 1536
   checksum TEXT NOT NULL UNIQUE,
   source_id UUID REFERENCES sources(id) ON DELETE CASCADE,
   metadata JSONB DEFAULT '{}',
@@ -36,7 +36,7 @@ CREATE INDEX idx_documents_embedding ON documents USING ivfflat (embedding vecto
 
 -- Функция для поиска похожих документов (универсальная)
 CREATE OR REPLACE FUNCTION search_documents(
-  query_embedding vector(384),
+  query_embedding vector(1536),
   match_threshold float DEFAULT 0.5,
   match_count int DEFAULT 10,
   filter_source_id uuid DEFAULT NULL
@@ -71,7 +71,7 @@ $$;
 
 -- Функция match_documents для совместимости с существующим кодом
 CREATE OR REPLACE FUNCTION match_documents(
-  query_embedding vector(384),
+  query_embedding vector(1536),
   match_count int DEFAULT 7
 )
 RETURNS TABLE (

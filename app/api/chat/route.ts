@@ -144,9 +144,12 @@ export async function POST(req: NextRequest) {
       lowerQuery.includes('новой газет') ||  // родительный: из Новой Газеты
       lowerQuery.includes('новая газет') ||   // именительный: Новая Газета
       lowerQuery.includes('новую газет') ||   // винительный: в Новую Газету
+      lowerQuery.includes('новая-газет') ||  // с дефисом
+      lowerQuery.includes('новаягазет') ||   // при слипшемся написании
       lowerQuery.includes('нов. газет') ||    // сокращение: Нов. Газета
       lowerQuery.includes('novayagazeta') ||  // латиницей в URL
-      lowerQuery.includes('novaya gazeta');
+      lowerQuery.includes('novaya gazeta') ||
+      (lowerQuery.includes('новая') && lowerQuery.includes('газет'));
     
     const mentionsSubstack = 
       lowerQuery.includes('substack') ||
@@ -224,14 +227,16 @@ export async function POST(req: NextRequest) {
       process.env.SUPABASE_SERVICE_ROLE_KEY
     );
 
-    // Используем гибридный поиск (keyword + vector) для лучшей точности
-    let matchCount = 7;
+  // Используем гибридный поиск (keyword + vector) для лучшей точности
+  let matchCount = 7;
     
     // Увеличиваем match_count для запросов типа "все" или "find all"
     if (lowerQuery.includes('все') || lowerQuery.includes('список') ||
         lowerQuery.includes('find all') || lowerQuery.includes('all') ||
         lowerQuery.includes('все рецепт') || lowerQuery.includes('список рецепт')) {
-      matchCount = 50; // Увеличиваем значительно для поиска всех рецептов
+      // Для запросов типа "все рецепты" хотим вернуть больше совпадений.
+      // Увеличиваем до 100 — достаточно для большинства наборов, но не чрезмерно тяжело.
+      matchCount = 100;
       console.log('[SEARCH] "All recipes" query detected, increasing match_count to', matchCount);
     } else if (lowerQuery.includes('рецепт') || lowerQuery.includes('еда') ||
                lowerQuery.includes('блюд') || lowerQuery.includes('кухн')) {
@@ -337,16 +342,34 @@ export async function POST(req: NextRequest) {
     });
 
     // ДИНАМИЧЕСКИЙ SIMILARITY THRESHOLD: фильтруем низкокачественные результаты
-    const minSimilarity = intent.action === 'recipes' ? 0.4 : 0.3;
-    allMatches = allMatches.filter(match => (match.similarity || 0) >= minSimilarity);
-    console.log(`[QUALITY FILTER] Filtered ${allMatches.length} matches with similarity >= ${minSimilarity}`);
+  // Базовый порог схожести: понижаем для рецептов, чтобы не терять короткие/кулинарные чанки
+  const minSimilarity = intent.action === 'recipes' ? 0.2 : 0.3;
 
-    // Если все варианты поиска провалились, возвращаем ошибку
+    // Диагностика: сколько совпадений было до фильтрации
+    const preFilterCount = allMatches.length;
+    console.log(`[QUALITY FILTER] Pre-filter matches: ${preFilterCount}, topSimilarity: ${topSimilarity}, minSimilarity: ${minSimilarity}`);
+
+    // сохраняем резервную копию на случай отката/фоллбека
+    const allMatchesBackup = allMatches.slice();
+
+    allMatches = allMatches.filter(match => (match.similarity || 0) >= minSimilarity);
+    console.log(`[QUALITY FILTER] After strict similarity filter: ${allMatches.length} matches (threshold: ${minSimilarity})`);
+
+    // Фоллбек: если строгий фильтр убрал все результаты, попробуем ослабить порог
     if (allMatches.length === 0) {
-      console.error('[SEARCH] No matches found from any query variant');
+      console.warn('[QUALITY FILTER] No matches after strict similarity filter. Attempting relaxed fallback...');
+      const relaxedMin = Math.max(0.05, minSimilarity - 0.15); // ослабляем на 0.15, не ниже 0.05
+      allMatches = allMatchesBackup.filter(match => (match.similarity || 0) >= relaxedMin);
+      console.log(`[QUALITY FILTER] Relaxed fallback applied: ${allMatches.length} matches (relaxedMin: ${relaxedMin})`);
+    }
+
+    // Если все варианты поиска провалились даже после фоллбека, возвращаем ошибку и диагностические данные
+    if (allMatches.length === 0) {
+      console.error('[SEARCH] No matches found from any query variant even after relaxed fallback');
+      console.error('[SEARCH DIAG] Top candidates before filters:', allMatchesBackup.slice(0, 5).map(m => ({ id: m.id || m.document_id, similarity: m.similarity || 0, contentPreview: (m.content || '').substring(0, 120) })));
       return NextResponse.json({ 
         error: 'Не найдено релевантных документов', 
-        message: 'Попробуйте переформулировать запрос' 
+        message: 'Попробуйте переформулировать запрос или уточнить источник' 
       }, { status: 404 });
     }
 
@@ -442,7 +465,7 @@ export async function POST(req: NextRequest) {
       // Сортируем по similarity и ограничиваем
       matches = deduplicatedRecipes
         .sort((a, b) => (b.similarity || 0) - (a.similarity || 0))
-        .slice(0, 30); // Максимум 30 уникальных рецептов
+        .slice(0, Math.max(30, matchCount)); // Максимум зависит от matchCount (минимум 30)
 
       console.log(`[RECIPES] Smart deduplication: ${recipeGroups.size} recipe groups → ${matches.length} unique recipes`);
     }
@@ -486,12 +509,14 @@ export async function POST(req: NextRequest) {
       const isJournalismQuery = lowerQuery.includes('новая газета') || lowerQuery.includes('новой газете') ||
                                lowerQuery.includes('колонк') || lowerQuery.includes('публикац');
 
-      const minSimilarityThreshold = isRecipesQuery ? 0.4 :
+      // Relaxed quality thresholds for recipes and journalism
+      const minSimilarityThreshold = isRecipesQuery ? 0.2 :
                                    isJournalismQuery ? 0.35 : 0.3;
 
       const qualityFilters = {
         minSimilarity: minSimilarityThreshold,
-        minLength: intent.action === 'analyze' ? 100 : 50,
+        // Рецепты часто хранятся в коротких чанках — разрешаем меньшую длину
+        minLength: isRecipesQuery ? 10 : (intent.action === 'analyze' ? 100 : 50),
         hasContent: true
       };
 
@@ -537,7 +562,11 @@ export async function POST(req: NextRequest) {
           if (!doc) return false;
           
           if (mentionsNovajaGazeta) {
-            return doc.url && doc.url.includes('novayagazeta');
+              // Проверяем в URL и в заголовке документа на предмет Новая Газета
+              const url = (doc.url || '').toLowerCase();
+              const title = (doc.title || '').toLowerCase();
+              return (url && (url.includes('novayagazeta') || url.includes('novaya') || url.includes('novaia'))) ||
+                     (title && title.includes('новая газета'));
           } else if (mentionsSubstack) {
             return doc.url && doc.url.includes('substack');
           } else if (mentionsCV) {

@@ -20,29 +20,19 @@ CREATE TABLE sources (
 INSERT INTO sources (id, name, description) VALUES
 ('c5aab739-7112-4360-be9e-45edf4287c42', 'Основной источник', 'Основной источник документов для AI-ассистента');
 
--- Создаем таблицу документов с правильной размерностью 384
+-- Создаем таблицу документов с размерностью 1536 (OpenAI text-embedding-3-small)
 CREATE TABLE documents (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   content TEXT NOT NULL,
-  embedding vector(384), -- Правильная размерность для all-MiniLM-L6-v2
+  embedding vector(1536), -- OpenAI text-embedding-3-small: 1536 dims
   checksum TEXT NOT NULL UNIQUE,
   source_id UUID REFERENCES sources(id) ON DELETE CASCADE,
   metadata JSONB DEFAULT '{}',
-  embedding_provider TEXT DEFAULT 'huggingface',
+  embedding_provider TEXT DEFAULT 'openai',
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Создаем таблицу с правильной размерностью 384
-CREATE TABLE documents (
-  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  content TEXT NOT NULL,
-  embedding vector(384), -- Правильная размерность для all-MiniLM-L6-v2
-  checksum TEXT NOT NULL UNIQUE,
-  source_id UUID REFERENCES sources(id) ON DELETE CASCADE,
-  metadata JSONB DEFAULT '{}',
-  embedding_provider TEXT DEFAULT 'huggingface',
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
+-- (Deprecated duplicate block removed) If you rely on this script, it now creates documents with vector(1536).
 
 -- Создаем индексы
 CREATE INDEX idx_documents_embedding ON documents USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
@@ -52,7 +42,7 @@ CREATE INDEX idx_documents_created_at ON documents(created_at);
 
 -- Создаем функцию match_documents
 CREATE OR REPLACE FUNCTION match_documents(
-  query_embedding vector(384),
+  query_embedding vector(1536),
   match_count int DEFAULT 7
 )
 RETURNS TABLE (
