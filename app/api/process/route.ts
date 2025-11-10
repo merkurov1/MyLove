@@ -5,6 +5,9 @@ import crypto from 'crypto'
 import axios from 'axios'
 import * as cheerio from 'cheerio'
 
+// We'll dynamically import `youtube-transcript` when needed inside the function to avoid
+// top-level await / ESM/CJS interop issues in different runtimes.
+
 // Функция для разбиения текста на чанки
 function splitIntoChunks(text: string, maxChunkSize: number = 1000): string[] {
   console.log('splitIntoChunks called with text length:', text.length)
@@ -49,12 +52,47 @@ function calculateChecksum(text: string): string {
 // Функция для получения транскрипции YouTube
 async function getYouTubeTranscript(url: string): Promise<string> {
   try {
-    // Для простоты пока возвращаем заглушку
-    // В реальном проекте здесь будет youtube-transcript
-    return `Транскрипция YouTube видео: ${url}. Это тестовая транскрипция для демонстрации работы системы. В реальном проекте здесь будет использоваться библиотека youtube-transcript для получения реальных субтитров видео.`
-  } catch (error) {
+    // Попытка извлечь id видео
+    const idMatch = url.match(/(?:v=|\/|be\/)([A-Za-z0-9_-]{11})/)
+    const videoId = idMatch ? idMatch[1] : null
+    if (!videoId) {
+      throw new Error('Не удалось распознать id видео в URL')
+    }
+
+    // Динамически импортируем библиотеку, т.к. в среде сборки могут быть разные схемы экспорта
+    let ytModule: any = null
+    try {
+      ytModule = await import('youtube-transcript')
+    } catch (e) {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        ytModule = require('youtube-transcript')
+      } catch (err) {
+        console.warn('youtube-transcript module not available:', err)
+        ytModule = null
+      }
+    }
+
+    if (!ytModule) {
+      throw new Error('Модуль youtube-transcript не установлен')
+    }
+
+    const getTranscriptFn = ytModule.getTranscript || ytModule.default?.getTranscript || ytModule.default || ytModule
+    if (typeof getTranscriptFn !== 'function') {
+      throw new Error('Не удалось получить функцию транскрипции из модуля youtube-transcript')
+    }
+
+    // Вызов функции и объединение сегментов в единый текст
+    const transcript = await getTranscriptFn(videoId)
+    if (Array.isArray(transcript)) {
+      return transcript.map((seg: any) => seg.text).join(' ')
+    }
+    if (typeof transcript === 'string') return transcript
+
+    throw new Error('Не удалось получить транскрипцию из youtube-transcript')
+  } catch (error: any) {
     console.error('YouTube transcript error:', error)
-    throw new Error('Не удалось получить транскрипцию YouTube видео')
+    throw new Error(error?.message || 'Не удалось получить транскрипцию YouTube видео')
   }
 }
 
