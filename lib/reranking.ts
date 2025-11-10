@@ -1,5 +1,7 @@
 // lib/reranking.ts - LLM-based reranking for better relevance
 
+import { RERANK_EMBEDDING_WEIGHT, RERANK_LLM_WEIGHT } from './search-config';
+
 interface RerankResult {
   id: string;
   document_id: string;
@@ -41,7 +43,7 @@ export async function rerankResults(
           return {
             ...result,
             rerank_score: score,
-            final_score: (result.similarity * 0.4 + score * 0.6) // 40% embeddings, 60% reranking
+            final_score: (result.similarity * RERANK_EMBEDDING_WEIGHT + score * RERANK_LLM_WEIGHT)
           };
         } catch (error) {
           console.error('[RERANK] Error scoring result:', error);
@@ -165,10 +167,10 @@ Output format: comma-separated indices (e.g., "2,0,4,1,3")`;
     const reranked = ranking
       .filter((i: number) => i >= 0 && i < results.length)
       .map((i: number, rank: number) => ({
-        ...results[i],
-        rerank_score: 1 - (rank / ranking.length), // Higher for better rank
-        final_score: results[i].similarity * 0.3 + (1 - rank / ranking.length) * 0.7
-      }))
+          ...results[i],
+          rerank_score: 1 - (rank / ranking.length), // Higher for better rank
+          final_score: results[i].similarity * RERANK_EMBEDDING_WEIGHT + (1 - rank / ranking.length) * RERANK_LLM_WEIGHT
+        }))
       .slice(0, topK);
     
     console.log('[FAST_RERANK] Completed:', { 

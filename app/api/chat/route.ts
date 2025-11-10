@@ -2,6 +2,20 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { getEmbedding } from '@/lib/embedding-ai';
+import {
+  DEFAULT_MATCH_COUNT,
+  ALL_RECIPES_MATCH_COUNT,
+  COOKING_MATCH_COUNT,
+  KEYWORD_WEIGHT_DEFAULT,
+  SEMANTIC_WEIGHT_DEFAULT,
+  HYBRID_WEIGHTS,
+  MIN_SIMILARITY_DEFAULT,
+  MIN_SIMILARITY_RECIPES,
+  MIN_SIMILARITY_JOURNALISM,
+  RELAXED_MIN_DELTA,
+  RELAXED_MIN_FLOOR,
+  RERANK_SIMILARITY_THRESHOLD
+} from '@/lib/search-config';
 import { createClient } from '@supabase/supabase-js';
 import { detectIntent, AGENT_PROMPTS, formatResponseWithSources, extractCitations } from '@/lib/agent-actions';
 import { fastRerank } from '@/lib/reranking';
@@ -228,59 +242,58 @@ export async function POST(req: NextRequest) {
     );
 
   // Используем гибридный поиск (keyword + vector) для лучшей точности
-  let matchCount = 7;
+    let matchCount = DEFAULT_MATCH_COUNT;
     
     // Увеличиваем match_count для запросов типа "все" или "find all"
     if (lowerQuery.includes('все') || lowerQuery.includes('список') ||
         lowerQuery.includes('find all') || lowerQuery.includes('all') ||
         lowerQuery.includes('все рецепт') || lowerQuery.includes('список рецепт')) {
       // Для запросов типа "все рецепты" хотим вернуть больше совпадений.
-      // Увеличиваем до 100 — достаточно для большинства наборов, но не чрезмерно тяжело.
-      matchCount = 100;
+      matchCount = ALL_RECIPES_MATCH_COUNT;
       console.log('[SEARCH] "All recipes" query detected, increasing match_count to', matchCount);
     } else if (lowerQuery.includes('рецепт') || lowerQuery.includes('еда') ||
                lowerQuery.includes('блюд') || lowerQuery.includes('кухн')) {
-      matchCount = 20; // Увеличиваем для кулинарных запросов
+      matchCount = COOKING_MATCH_COUNT; // Увеличиваем для кулинарных запросов
       console.log('[SEARCH] Cooking query detected, increasing match_count to', matchCount);
     }
     
     // АДАПТИВНЫЕ ВЕСА: в зависимости от типа запроса и длины
-    let keyword_weight = 0.3; // по умолчанию
-    let semantic_weight = 0.7;
+  let keyword_weight = KEYWORD_WEIGHT_DEFAULT; // по умолчанию
+  let semantic_weight = SEMANTIC_WEIGHT_DEFAULT;
 
     // Запросы типа "все/список" — больше keyword для точного поиска
     if (lowerQuery.includes('все') || lowerQuery.includes('список') ||
         lowerQuery.includes('find all') || lowerQuery.includes('all') ||
         lowerQuery.includes('все рецепт')) {
-      keyword_weight = 0.7;
-      semantic_weight = 0.3;
-      console.log('[HYBRID] "All/list" query detected, using keyword_weight=0.7 for precise matching');
+      keyword_weight = HYBRID_WEIGHTS.allList.keyword;
+      semantic_weight = HYBRID_WEIGHTS.allList.semantic;
+      console.log('[HYBRID] "All/list" query detected, using HYBRID_WEIGHTS.allList');
     }
     // Кулинарные запросы — сбалансированные веса для точности
     else if (lowerQuery.includes('рецепт') || lowerQuery.includes('еда') ||
              lowerQuery.includes('блюд') || lowerQuery.includes('кухн') ||
              lowerQuery.includes('готов') || lowerQuery.includes('ингредиент')) {
-      keyword_weight = 0.5;
-      semantic_weight = 0.5;
-      console.log('[HYBRID] Cooking query detected, using balanced weights keyword_weight=0.5');
+      keyword_weight = HYBRID_WEIGHTS.cooking.keyword;
+      semantic_weight = HYBRID_WEIGHTS.cooking.semantic;
+      console.log('[HYBRID] Cooking query detected, using HYBRID_WEIGHTS.cooking');
     }
     // Короткие запросы (< 20 символов) — больше keyword matching
     else if (query.length < 20) {
-      keyword_weight = 0.6;
-      semantic_weight = 0.4;
-      console.log('[HYBRID] Short query detected, using keyword_weight=0.6');
+      keyword_weight = HYBRID_WEIGHTS.short.keyword;
+      semantic_weight = HYBRID_WEIGHTS.short.semantic;
+      console.log('[HYBRID] Short query detected, using HYBRID_WEIGHTS.short');
     }
     // Упоминание конкретных источников — больше keyword для точности
     else if (mentionsNovajaGazeta || mentionsSubstack || mentionsCV) {
-      keyword_weight = 0.5;
-      semantic_weight = 0.5;
-      console.log('[HYBRID] Specific source mentioned, using keyword_weight=0.5');
+      keyword_weight = HYBRID_WEIGHTS.sourceMention.keyword;
+      semantic_weight = HYBRID_WEIGHTS.sourceMention.semantic;
+      console.log('[HYBRID] Specific source mentioned, using HYBRID_WEIGHTS.sourceMention');
     }
     // Аналитические запросы — больше semantic для понимания контекста
     else if (intent.action === 'analyze' || intent.action === 'compare') {
-      keyword_weight = 0.2;
-      semantic_weight = 0.8;
-      console.log('[HYBRID] Analytical query, using semantic_weight=0.8');
+      keyword_weight = HYBRID_WEIGHTS.analytical.keyword;
+      semantic_weight = HYBRID_WEIGHTS.analytical.semantic;
+      console.log('[HYBRID] Analytical query, using HYBRID_WEIGHTS.analytical');
     }
     
     // 4. Найти релевантные документы через multi-query поиск
@@ -343,7 +356,7 @@ export async function POST(req: NextRequest) {
 
     // ДИНАМИЧЕСКИЙ SIMILARITY THRESHOLD: фильтруем низкокачественные результаты
   // Базовый порог схожести: понижаем для рецептов, чтобы не терять короткие/кулинарные чанки
-  const minSimilarity = intent.action === 'recipes' ? 0.2 : 0.3;
+  const minSimilarity = intent.action === 'recipes' ? MIN_SIMILARITY_RECIPES : MIN_SIMILARITY_DEFAULT;
 
     // Диагностика: сколько совпадений было до фильтрации
     const preFilterCount = allMatches.length;
@@ -358,7 +371,7 @@ export async function POST(req: NextRequest) {
     // Фоллбек: если строгий фильтр убрал все результаты, попробуем ослабить порог
     if (allMatches.length === 0) {
       console.warn('[QUALITY FILTER] No matches after strict similarity filter. Attempting relaxed fallback...');
-      const relaxedMin = Math.max(0.05, minSimilarity - 0.15); // ослабляем на 0.15, не ниже 0.05
+      const relaxedMin = Math.max(RELAXED_MIN_FLOOR, minSimilarity - RELAXED_MIN_DELTA);
       allMatches = allMatchesBackup.filter(match => (match.similarity || 0) >= relaxedMin);
       console.log(`[QUALITY FILTER] Relaxed fallback applied: ${allMatches.length} matches (relaxedMin: ${relaxedMin})`);
     }
@@ -377,9 +390,9 @@ export async function POST(req: NextRequest) {
 
     // RERANKING: Используем LLM для переранжирования результатов ТОЛЬКО для сложных случаев
     // Экономия бюджета: только если similarity < 0.5 (неуверенный поиск)
-    const shouldRerank = matches && matches.length > 0 && 
-                         intent.action === 'qa' && 
-                         topSimilarity < 0.5;  // Только для сложных запросов
+  const shouldRerank = matches && matches.length > 0 && 
+             intent.action === 'qa' && 
+             topSimilarity < RERANK_SIMILARITY_THRESHOLD;  // Только для сложных запросов
     
     if (shouldRerank) {
       console.log('[RERANKING] Low similarity detected, applying fast rerank...');
@@ -941,7 +954,7 @@ export async function POST(req: NextRequest) {
         uniqueDocuments: new Set(matches.map(m => m.document_id)).size,
         avgSimilarity: matches.length > 0 ? matches.reduce((sum, m) => sum + (m.similarity || 0), 0) / matches.length : 0,
         contextLength: contextText.length,
-        minSimilarity: 0.4
+        minSimilarity: MIN_SIMILARITY_RECIPES
       });
     }
     
