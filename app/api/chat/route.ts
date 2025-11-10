@@ -115,6 +115,13 @@ export async function POST(req: NextRequest) {
     // Используем гибридный поиск (keyword + vector) для лучшей точности
     let matchCount = 7;
     
+    // Увеличиваем match_count для запросов типа "все" или "find all"
+    if (lowerQuery.includes('все') || lowerQuery.includes('список') || 
+        lowerQuery.includes('find all') || lowerQuery.includes('all')) {
+      matchCount = 15; // Увеличиваем для поиска большего количества результатов
+      console.log('[SEARCH] "All/find all" query detected, increasing match_count to', matchCount);
+    }
+    
     // АДАПТИВНЫЕ ВЕСА: в зависимости от типа запроса и длины
     let keyword_weight = 0.3; // по умолчанию
     let semantic_weight = 0.7;
