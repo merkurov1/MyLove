@@ -10,6 +10,16 @@ const os = require('os')
 const path = require('path')
 const child_process = require('child_process')
 
+// Helper: check if a CLI command is available in PATH
+function isCmdAvailable(cmd: string) {
+  try {
+    const res = child_process.spawnSync('which', [cmd], { encoding: 'utf-8' })
+    return res.status === 0 && !!res.stdout
+  } catch (e) {
+    return false
+  }
+}
+
 export const runtime = 'nodejs';
 
 export async function POST(req: NextRequest) {
