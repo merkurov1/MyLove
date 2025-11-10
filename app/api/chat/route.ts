@@ -50,7 +50,7 @@ export async function POST(req: NextRequest) {
     if (enableMultiQuery) {
       try {
       // Генерируем 2-3 дополнительных варианта запроса через LLM
-      const multiQueryPrompt = `Ты — помощник для улучшения поиска. Создай 2-3 альтернативных формулировок этого запроса для более эффективного поиска в базе знаний. 
+      const multiQueryPrompt = `Ты — помощник для улучшения поиска. Создай 2-3 альтернативных формулировок этого запроса для более эффективного поиска в базе знаний.
 
 Оригинальный запрос: "${query}"
 
@@ -93,6 +93,50 @@ export async function POST(req: NextRequest) {
     // 2. Query expansion для улучшения поиска
     let expandedQuery = query;
     const lowerQuery = query.toLowerCase();
+
+    // Специальная логика для кулинарных запросов в multi-query
+    if (enableMultiQuery && (lowerQuery.includes('рецепт') || lowerQuery.includes('еда') || lowerQuery.includes('блюд'))) {
+      // Перегенерируем варианты с кулинарным фокусом
+      try {
+        const cookingPrompt = `Ты — помощник для поиска рецептов. Создай 3 варианта запроса для поиска всех рецептов еды в базе знаний.
+
+Оригинальный запрос: "${query}"
+
+Создай варианты, которые помогут найти:
+- Все упоминания рецептов и блюд
+- Кулинарные заметки и инструкции по готовке
+- Ингредиенты и способы приготовления
+- Любые тексты о еде и кулинарии
+
+Верни только варианты запросов, по одному на строку, без нумерации.`;
+
+        const cookingResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            model: 'gpt-4o-mini',
+            messages: [{ role: 'user', content: cookingPrompt }],
+            temperature: 0.3,
+            max_tokens: 200
+          })
+        });
+
+        if (cookingResponse.ok) {
+          const cookingData = await cookingResponse.json();
+          const cookingVariants = cookingData.choices[0]?.message?.content?.trim();
+          if (cookingVariants) {
+            const variants = cookingVariants.split('\n').filter((v: string) => v.trim().length > 0).slice(0, 3);
+            queryVariants = [query, ...variants];
+            console.log('[MULTI-QUERY] Regenerated cooking variants:', queryVariants);
+          }
+        }
+      } catch (cookingError) {
+        console.log('[MULTI-QUERY] Failed to regenerate cooking variants, using original');
+      }
+    }
     
     // Если запрос о "Новой Газете" + "колонки" - расширяем контекст
     // Проверяем разные падежи: новая/новой/новую газета/газете/газету
@@ -138,8 +182,14 @@ export async function POST(req: NextRequest) {
       expandedQuery = query + ' резюме опыт работы карьера образование навыки';
       console.log('[QUERY EXPANSION] Expanded for CV:', expandedQuery);
     } else if (lowerQuery.includes('рецепт') || lowerQuery.includes('еда') || lowerQuery.includes('кулинар')) {
-      expandedQuery = query + ' кулинария готовить блюдо ингредиенты';
-      console.log('[QUERY EXPANSION] Expanded for recipes:', expandedQuery);
+      // Специальная логика для запросов типа "все рецепты"
+      if (lowerQuery.includes('все') || lowerQuery.includes('список') || lowerQuery.includes('find all')) {
+        expandedQuery = query + ' рецепт блюдо еда кулинария готовка ингредиенты кухня приготовление';
+        console.log('[QUERY EXPANSION] Expanded for "all recipes":', expandedQuery);
+      } else {
+        expandedQuery = query + ' кулинария готовить блюдо ингредиенты';
+        console.log('[QUERY EXPANSION] Expanded for recipes:', expandedQuery);
+      }
     }
 
     // 3. Получить embeddings для всех вариантов запроса
@@ -178,18 +228,39 @@ export async function POST(req: NextRequest) {
     let matchCount = 7;
     
     // Увеличиваем match_count для запросов типа "все" или "find all"
-    if (lowerQuery.includes('все') || lowerQuery.includes('список') || 
-        lowerQuery.includes('find all') || lowerQuery.includes('all')) {
-      matchCount = 15; // Увеличиваем для поиска большего количества результатов
-      console.log('[SEARCH] "All/find all" query detected, increasing match_count to', matchCount);
+    if (lowerQuery.includes('все') || lowerQuery.includes('список') ||
+        lowerQuery.includes('find all') || lowerQuery.includes('all') ||
+        lowerQuery.includes('все рецепт') || lowerQuery.includes('список рецепт')) {
+      matchCount = 25; // Увеличиваем значительно для поиска всех рецептов
+      console.log('[SEARCH] "All recipes" query detected, increasing match_count to', matchCount);
+    } else if (lowerQuery.includes('рецепт') || lowerQuery.includes('еда') ||
+               lowerQuery.includes('блюд') || lowerQuery.includes('кухн')) {
+      matchCount = 12; // Увеличиваем для кулинарных запросов
+      console.log('[SEARCH] Cooking query detected, increasing match_count to', matchCount);
     }
     
     // АДАПТИВНЫЕ ВЕСА: в зависимости от типа запроса и длины
     let keyword_weight = 0.3; // по умолчанию
     let semantic_weight = 0.7;
-    
+
+    // Запросы типа "все/список" — больше keyword для точного поиска
+    if (lowerQuery.includes('все') || lowerQuery.includes('список') ||
+        lowerQuery.includes('find all') || lowerQuery.includes('all') ||
+        lowerQuery.includes('все рецепт')) {
+      keyword_weight = 0.7;
+      semantic_weight = 0.3;
+      console.log('[HYBRID] "All/list" query detected, using keyword_weight=0.7 for precise matching');
+    }
+    // Кулинарные запросы — сбалансированные веса для точности
+    else if (lowerQuery.includes('рецепт') || lowerQuery.includes('еда') ||
+             lowerQuery.includes('блюд') || lowerQuery.includes('кухн') ||
+             lowerQuery.includes('готов') || lowerQuery.includes('ингредиент')) {
+      keyword_weight = 0.5;
+      semantic_weight = 0.5;
+      console.log('[HYBRID] Cooking query detected, using balanced weights keyword_weight=0.5');
+    }
     // Короткие запросы (< 20 символов) — больше keyword matching
-    if (query.length < 20) {
+    else if (query.length < 20) {
       keyword_weight = 0.6;
       semantic_weight = 0.4;
       console.log('[HYBRID] Short query detected, using keyword_weight=0.6');
