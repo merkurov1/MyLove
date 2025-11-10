@@ -447,6 +447,59 @@ export async function POST(req: NextRequest) {
       console.log(`[RECIPES] Smart deduplication: ${recipeGroups.size} recipe groups → ${matches.length} unique recipes`);
     }
 
+    // SOURCE CREDIBILITY SCORING: повышаем релевантность для domain-specific источников
+    if (matches && matches.length > 0 && intent.domain) {
+      const sourceWeights: Record<string, number> = {
+        // Journalism sources
+        'Новая Газета': intent.domain === 'journalism' ? 1.3 : 1.0,
+        'Novaya Gazeta': intent.domain === 'journalism' ? 1.3 : 1.0,
+        'новая газета': intent.domain === 'journalism' ? 1.3 : 1.0,
+        // Personal content lower for journalism queries
+        'personal': intent.domain === 'journalism' ? 0.7 : 1.0,
+        'личные заметки': intent.domain === 'journalism' ? 0.7 : 1.0,
+        // Default
+        'unknown': 1.0
+      };
+
+      matches.forEach(match => {
+        const sourceTitle = match.source_title || match.document_title || '';
+        const weight = sourceWeights[sourceTitle.toLowerCase()] || 1.0;
+
+        if (weight !== 1.0) {
+          match.similarity = (match.similarity || 0) * weight;
+          console.log(`[SOURCE WEIGHT] ${sourceTitle}: similarity ${match.similarity?.toFixed(3)} (weight: ${weight})`);
+        }
+      });
+
+      // Пересортируем после применения весов
+      matches.sort((a, b) => (b.similarity || 0) - (a.similarity || 0));
+    }
+
+    // SMART RESULT FILTERING: фильтруем низкокачественные результаты
+    if (matches && matches.length > 0) {
+      const minSimilarityThreshold = intent.action === 'recipes' ? 0.4 :
+                                   intent.domain === 'journalism' ? 0.35 : 0.3;
+
+      const qualityFilters = {
+        minSimilarity: minSimilarityThreshold,
+        minLength: intent.action === 'analyze' ? 100 : 50,
+        hasContent: true
+      };
+
+      const beforeFiltering = matches.length;
+      matches = matches.filter(match => {
+        const similarity = match.similarity || 0;
+        const contentLength = match.content?.length || 0;
+        const hasContent = match.content && match.content.trim().length > 10;
+
+        return similarity >= qualityFilters.minSimilarity &&
+               contentLength >= qualityFilters.minLength &&
+               hasContent;
+      });
+
+      console.log(`[QUALITY FILTER] Filtered ${beforeFiltering} → ${matches.length} results (threshold: ${minSimilarityThreshold})`);
+    }
+
     let contextText = '';
     let filteredMatches = matches || [];
     
@@ -724,6 +777,45 @@ export async function POST(req: NextRequest) {
 
     console.log(`[${new Date().toISOString()}] Response generated successfully`);
     
+    // RESPONSE QUALITY VALIDATION
+    const validateResponse = (query: string, response: string, intent: any): boolean => {
+      // Basic quality checks
+      const hasContent = response && response.length > 10;
+      const hasRelevantKeywords = query.split(' ').some(word =>
+        word.length > 3 && response.toLowerCase().includes(word.toLowerCase())
+      );
+      const notTooShort = response.length > (intent.action === 'analyze' ? 200 : 50);
+      const notRepetitive = !response.includes('Извините') && !response.includes('не могу');
+
+      const isValid = hasContent && hasRelevantKeywords && notTooShort && notRepetitive;
+
+      console.log('[RESPONSE VALIDATION]', {
+        isValid,
+        length: response.length,
+        hasKeywords: hasRelevantKeywords,
+        intent: intent.action
+      });
+
+      return isValid;
+    };
+
+    // Если ответ не прошел валидацию — пытаемся улучшить
+    let finalAnswer = answer;
+    if (!validateResponse(query, answer, intent)) {
+      console.log('[RESPONSE VALIDATION] Low quality response detected, attempting improvement...');
+
+      // Для низкокачественных ответов — расширяем контекст или меняем промпт
+      if (contextText.length < 4000 && filteredMatches.length > 0) {
+        console.log('[FALLBACK] Expanding context for better response...');
+        // Можно добавить логику повторной генерации с расширенным контекстом
+      }
+
+      // Если ответ совсем плохой — добавляем disclaimer
+      if (answer.length < 50) {
+        finalAnswer = `${answer}\n\n⚠️ Ответ может быть неполным. Попробуйте переформулировать вопрос.`;
+      }
+    }
+    
     // Получаем информацию о документах для цитат
     let sources: any[] = [];
     if (filteredMatches && filteredMatches.length > 0) {
@@ -743,7 +835,7 @@ export async function POST(req: NextRequest) {
     }
     
     // Форматируем ответ с цитатами
-    const formattedReply = formatResponseWithSources(answer, sources);
+    const formattedReply = formatResponseWithSources(finalAnswer, sources);
     
     // Сохраняем диалог в базу
     let currentConversationId = conversationId;

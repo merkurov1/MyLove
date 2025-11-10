@@ -15,6 +15,12 @@ export interface AgentIntent {
   confidence: number
 }
 
+export interface EnhancedIntent extends AgentIntent {
+  domain: 'journalism' | 'recipes' | 'personal' | 'general'
+  specificity: 'specific' | 'broad' | 'latest'
+  temporal: 'latest' | 'historical' | 'current'
+}
+
 export interface SourceCitation {
   documentId: string
   documentTitle: string
@@ -31,129 +37,113 @@ export interface AgentResponse {
 }
 
 /**
- * Определяет намерение пользователя из запроса
+ * Определяет намерение пользователя из запроса с улучшенной логикой
  */
-export function detectIntent(query: string): AgentIntent {
+export function detectIntent(query: string): EnhancedIntent {
   const lowerQuery = query.toLowerCase()
-  
+
   console.log('[INTENT DETECTION] Analyzing query:', query)
   console.log('[INTENT DETECTION] Lower query:', lowerQuery)
-  
-  // Анализ (включая психолингвистический, профайлинг и т.д.)
-  if (
-    lowerQuery.includes('анализ') ||
-    lowerQuery.includes('разбери') ||
-    lowerQuery.includes('проанализируй') ||
-    lowerQuery.includes('психолингв') ||
-    lowerQuery.includes('профайл') ||
-    lowerQuery.includes('исследуй') ||
-    lowerQuery.includes('изучи')
-  ) {
-    const isLatest = 
-      lowerQuery.includes('последн') || 
-      lowerQuery.includes('свежий')
-    
-    // ВАЖНО: "новый" может означать "Новая Газета", а не "новый документ"
-    const mentionsNovajaGazeta = 
-      lowerQuery.includes('новой газет') ||
-      lowerQuery.includes('новая газет') ||
-      lowerQuery.includes('нов. газет')
-    
-    const isAll = 
-      (lowerQuery.includes('все') ||
-      lowerQuery.includes('всех') ||
-      lowerQuery.includes('каждую')) &&
-      !mentionsNovajaGazeta  // Если упоминается Новая Газета, это не "все документы"
-    
-    console.log('[INTENT DETECTION] Analysis intent detected:', { isLatest, mentionsNovajaGazeta, isAll })
-    
-    return {
-      action: 'analyze',
-      target: isLatest ? 'latest' : isAll ? 'all' : (mentionsNovajaGazeta ? 'all' : 'latest'),
-      confidence: 0.95  // Высокая уверенность для специализированных запросов
-    }
+
+  // Domain detection
+  let domain: EnhancedIntent['domain'] = 'general'
+  if (lowerQuery.includes('новая газета') || lowerQuery.includes('новой газете') ||
+      lowerQuery.includes('колонк') || lowerQuery.includes('публикац') ||
+      lowerQuery.includes('журналист')) {
+    domain = 'journalism'
+    console.log('[INTENT DETECTION] Domain detected: journalism')
+  } else if (lowerQuery.includes('рецепт') || lowerQuery.includes('еда') ||
+             lowerQuery.includes('блюд') || lowerQuery.includes('кулинар') ||
+             lowerQuery.includes('готов') || lowerQuery.includes('ингредиент')) {
+    domain = 'recipes'
+    console.log('[INTENT DETECTION] Domain detected: recipes')
+  } else if (lowerQuery.includes('я') || lowerQuery.includes('мне') ||
+             lowerQuery.includes('мой') || lowerQuery.includes('моя') ||
+             lowerQuery.includes('мои') || lowerQuery.includes('личн')) {
+    domain = 'personal'
+    console.log('[INTENT DETECTION] Domain detected: personal')
   }
-  
-  // Сравнение
-  if (
-    lowerQuery.includes('сравни') ||
-    lowerQuery.includes('отличи') ||
-    lowerQuery.includes('похож')
-  ) {
-    return {
-      action: 'compare',
-      target: 'all',
-      confidence: 0.85
-    }
+
+  // Specificity detection
+  let specificity: EnhancedIntent['specificity'] = 'broad'
+  if (lowerQuery.includes('последн') || lowerQuery.includes('свеж') ||
+      lowerQuery.includes('нов') || lowerQuery.includes('latest')) {
+    specificity = 'latest'
+    console.log('[INTENT DETECTION] Specificity: latest')
+  } else if (lowerQuery.includes('конкретн') || lowerQuery.includes('определен') ||
+             lowerQuery.includes('этот') || lowerQuery.includes('эту') ||
+             query.split(' ').length > 8) {
+    specificity = 'specific'
+    console.log('[INTENT DETECTION] Specificity: specific')
   }
-  
-  // Суммаризация
-  if (
-    lowerQuery.includes('кратко') ||
-    lowerQuery.includes('резюм') ||
-    lowerQuery.includes('суть') ||
-    lowerQuery.includes('главное')
-  ) {
-    const isLatest = 
-      lowerQuery.includes('последн') || 
-      lowerQuery.includes('новый') ||
-      lowerQuery.includes('свежий')
-    return {
-      action: 'summarize',
-      target: isLatest ? 'latest' : 'all',
-      confidence: 0.85
-    }
+
+  // Temporal detection
+  let temporal: EnhancedIntent['temporal'] = 'current'
+  if (lowerQuery.includes('последн') || lowerQuery.includes('свеж') ||
+      lowerQuery.includes('нов')) {
+    temporal = 'latest'
+  } else if (lowerQuery.includes('раньш') || lowerQuery.includes('прежн') ||
+             lowerQuery.includes('истор') || lowerQuery.includes('прошл')) {
+    temporal = 'historical'
   }
-  
-  // "О чем..." с контекстом (последняя колонка, я писал и т.д.)
-  if ((lowerQuery.includes('о чем') || lowerQuery.includes('о ком')) && 
-      (lowerQuery.includes('последн') || lowerQuery.includes('новый') || lowerQuery.includes('свежий'))) {
-    console.log('[INTENT DETECTION] "O chem..." rule triggered for latest document')
-    return {
-      action: 'summarize',
-      target: 'latest',
-      confidence: 0.85
-    }
+
+  // Action detection с учетом domain context
+  let action: AgentAction = 'qa'
+  let confidence = 0.6
+
+  // Analyze patterns
+  if (lowerQuery.includes('анализ') || lowerQuery.includes('разбери') ||
+      lowerQuery.includes('проанализируй') || lowerQuery.includes('исследуй')) {
+    action = 'analyze'
+    confidence = 0.95
+    console.log('[INTENT DETECTION] Action: analyze (high confidence)')
   }
-  
-  // Извлечение данных
-  if (
-    lowerQuery.includes('когда') ||
-    lowerQuery.includes('сколько') ||
-    lowerQuery.includes('кто') ||
-    lowerQuery.includes('где') ||
-    lowerQuery.includes('список')
-  ) {
-    return {
-      action: 'extract',
-      confidence: 0.7
-    }
+  // Summarize patterns
+  else if (lowerQuery.includes('кратко') || lowerQuery.includes('резюм') ||
+           lowerQuery.includes('суть') || lowerQuery.includes('главное') ||
+           (lowerQuery.includes('о чем') && specificity === 'latest')) {
+    action = 'summarize'
+    confidence = 0.85
+    console.log('[INTENT DETECTION] Action: summarize')
   }
-  
-  // Кулинарные запросы (рецепты, еда, готовка)
-  if (
-    lowerQuery.includes('рецепт') ||
-    lowerQuery.includes('еда') ||
-    lowerQuery.includes('блюд') ||
-    lowerQuery.includes('кулинар') ||
-    lowerQuery.includes('готов') ||
-    lowerQuery.includes('ингредиент') ||
-    lowerQuery.includes('кухн') ||
-    lowerQuery.includes('приготов') ||
-    (lowerQuery.includes('как') && (lowerQuery.includes('сделать') || lowerQuery.includes('приготовить')))
-  ) {
-    return {
-      action: 'recipes',
-      confidence: 0.9  // Высокая уверенность для кулинарных запросов
-    }
+  // Compare patterns
+  else if (lowerQuery.includes('сравни') || lowerQuery.includes('отличи') ||
+           lowerQuery.includes('похож') || lowerQuery.includes('против')) {
+    action = 'compare'
+    confidence = 0.85
+    console.log('[INTENT DETECTION] Action: compare')
   }
-  
-  // По умолчанию - обычный Q&A
-  console.log('[INTENT DETECTION] Defaulting to QA intent')
-  return {
-    action: 'qa',
-    confidence: 0.6
+  // Extract patterns
+  else if (lowerQuery.includes('когда') || lowerQuery.includes('сколько') ||
+           lowerQuery.includes('кто') || lowerQuery.includes('где') ||
+           lowerQuery.includes('список') || lowerQuery.includes('перечисли')) {
+    action = 'extract'
+    confidence = 0.8
+    console.log('[INTENT DETECTION] Action: extract')
   }
+  // Recipes action (domain-based)
+  else if (domain === 'recipes') {
+    action = 'recipes'
+    confidence = 0.9
+    console.log('[INTENT DETECTION] Action: recipes (domain-based)')
+  }
+
+  // Domain-specific confidence adjustments
+  if (domain === 'journalism' && action === 'summarize' && specificity === 'latest') {
+    confidence = Math.min(confidence + 0.1, 1.0) // Boost for journalism queries
+  }
+
+  const finalIntent: EnhancedIntent = {
+    action,
+    target: specificity === 'latest' ? 'latest' : 'all',
+    confidence,
+    domain,
+    specificity,
+    temporal
+  }
+
+  console.log('[INTENT DETECTION] Final intent:', finalIntent)
+  return finalIntent
 }
 
 /**
