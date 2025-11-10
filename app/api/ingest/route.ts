@@ -30,11 +30,30 @@ export async function POST(req: NextRequest) {
       const pdfData = await pdfParse(Buffer.from(arrayBuffer));
       text = pdfData.text;
     } catch (error: any) {
-      console.error('[Ingest] Error parsing .pdf:', error);
-      return NextResponse.json({
-        error: 'Не удалось прочитать PDF файл',
-        details: error.message
-      }, { status: 400 });
+      console.error('[Ingest] pdf-parse failed:', error && error.stack ? error.stack : error);
+      // Fallback: try pdfjs-dist text extraction for PDFs that pdf-parse can't handle
+      try {
+        console.log('[Ingest] Trying fallback extraction with pdfjs-dist');
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const pdfjsLib = require('pdfjs-dist/legacy/build/pdf.js');
+        const loadingTask = pdfjsLib.getDocument({ data: Buffer.from(arrayBuffer) });
+        const pdf = await loadingTask.promise;
+        let fullText = '';
+        for (let i = 1; i <= pdf.numPages; i++) {
+          const page = await pdf.getPage(i);
+          const content = await page.getTextContent();
+          const strings = content.items.map((it: any) => it.str || '').join(' ');
+          fullText += strings + '\n\n';
+        }
+        text = fullText.trim();
+        console.log('[Ingest] pdfjs-dist fallback succeeded, length:', text.length);
+      } catch (fallbackError: any) {
+        console.error('[Ingest] pdfjs-dist fallback failed:', fallbackError && fallbackError.stack ? fallbackError.stack : fallbackError);
+        return NextResponse.json({
+          error: 'Не удалось прочитать PDF файл',
+          details: String(error?.message || error) + ' | fallback: ' + String(fallbackError?.message || fallbackError)
+        }, { status: 400 });
+      }
     }
   } else if (fileName.endsWith('.docx')) {
     console.log(`[${new Date().toISOString()}] Parsing .docx file with mammoth`);
