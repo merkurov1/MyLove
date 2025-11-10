@@ -43,9 +43,9 @@ export async function POST(req: NextRequest) {
     console.log(`[${new Date().toISOString()}] Generating multiple query variants...`);
     let queryVariants = [query];
     
-    // ЭКОНОМИЯ: отключаем для очень коротких запросов (< 10 символов) или если установлена переменная окружения
-    const enableMultiQuery = query.length >= 10 && !process.env.DISABLE_MULTI_QUERY;
-    console.log(`[${new Date().toISOString()}] Multi-query ${enableMultiQuery ? 'ENABLED' : 'DISABLED'} for query length: ${query.length}`);
+    // ЭКОНОМИЯ: отключаем для очень коротких запросов (< 10 символов), рецептов или если установлена переменная окружения
+    const enableMultiQuery = query.length >= 10 && intent.action !== 'recipes' && !process.env.DISABLE_MULTI_QUERY;
+    console.log(`[${new Date().toISOString()}] Multi-query ${enableMultiQuery ? 'ENABLED' : 'DISABLED'} for query length: ${query.length}, intent: ${intent.action}`);
     
     if (enableMultiQuery) {
       try {
