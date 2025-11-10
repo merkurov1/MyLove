@@ -60,7 +60,14 @@ export default function DocumentsTable() {
     try {
       const res = await fetch(`/api/documents?id=${id}`, { method: 'DELETE' })
       const data = await res.json()
-      if (!data.error) setDocs(docs => docs.filter(d => d.id !== id))
+      // If server reports success but deletedCount is zero, surface an error
+      if (data.error) {
+        setError(data.error || 'Ошибка при удалении')
+      } else if (data.success && (data.deletedCount === undefined || data.deletedCount > 0)) {
+        setDocs(docs => docs.filter(d => d.id !== id))
+      } else if (data.success && data.deletedCount === 0) {
+        setError('Сервер не удалил документ (deletedCount=0). Проверьте логи / API.')
+      }
     } finally {
       setDeleting(null)
     }
