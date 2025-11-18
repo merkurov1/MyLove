@@ -18,6 +18,7 @@ import {
   , MIN_LENGTH_RECIPES, MIN_LENGTH_ANALYZE, MIN_LENGTH_DEFAULT, RECIPE_MIN_RESULTS
 } from '@/lib/search-config';
 import { createClient } from '@supabase/supabase-js';
+import { findCachedResponse, insertCachedResponse } from '@/lib/response-cache';
 import { detectIntent, AGENT_PROMPTS, formatResponseWithSources, extractCitations } from '@/lib/agent-actions';
 import { fastRerank } from '@/lib/reranking';
 import { trackQuery, checkAnomalies, type QueryMetrics } from '@/lib/telemetry';
@@ -32,7 +33,7 @@ export async function POST(req: NextRequest) {
   console.log('[ENV CHECK] NEXT_PUBLIC_SUPABASE_ANON_KEY:', !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 
   try {
-    const { query, sourceId, conversationId } = await req.json();
+    const { query, sourceId, conversationId, settings } = await req.json();
     console.log(`[${new Date().toISOString()}] Chat API called with:`, {
       query: query?.substring(0, 100),
       queryLength: query?.length,
@@ -235,6 +236,20 @@ export async function POST(req: NextRequest) {
     
     // Используем первый embedding как основной для совместимости
     const primaryEmbedding = queryEmbeddings[0];
+
+    // SEMANTIC RESPONSE CACHE: проверяем кэш ответов перед выполнением RAG
+    try {
+      const cacheThreshold = settings?.cacheThreshold ?? 0.99;
+      const cached = await findCachedResponse(primaryEmbedding, cacheThreshold);
+      if (cached && cached.llm_response) {
+        console.log('[RESPONSE-CACHE] Hit (similarity=' + (cached.similarity || 0).toFixed(4) + ') — returning cached response');
+        // Возвращаем кэшированный объект как есть.
+        return NextResponse.json(cached.llm_response);
+      }
+      console.log('[RESPONSE-CACHE] Miss');
+    } catch (cacheErr: any) {
+      console.warn('[RESPONSE-CACHE] Lookup failed, continuing without cache:', cacheErr?.message || cacheErr);
+    }
 
     // 3. Найти релевантные документы через Supabase
     const supabase = createClient(
@@ -773,7 +788,9 @@ export async function POST(req: NextRequest) {
     // Настройки генерации в зависимости от типа задачи
     // Аналитика требует больше токенов и меньше креативности
     const isAnalytical = ['analyze', 'multi_analyze', 'compare'].includes(intent.action);
-    const temperature = isAnalytical ? 0.4 : 0.6;  // Аналитика: точнее, QA: чуть свободнее
+    // Allow tuner to prefer extractive (lower temperature)
+    const preferExtractive = settings?.preferExtractive ?? false;
+    const temperature = preferExtractive ? 0.1 : (isAnalytical ? 0.4 : 0.6);  // Аналитика: точнее, QA: чуть свободнее
     
     // CONTEXT WINDOW MANAGEMENT: динамически рассчитываем max_tokens
     // gpt-4o-mini имеет context window 128k tokens
@@ -802,8 +819,11 @@ export async function POST(req: NextRequest) {
     
     // Базовые лимиты по типу задачи
     const baseMaxTokens = isAnalytical ? 3000 : (intent.action === 'summarize' ? 800 : 1500);
+    // Honor tuner requested maxGenerationTokens if provided
+    const requestedMax = settings?.maxGenerationTokens;
+    const effectiveMax = requestedMax ? Math.max(128, Math.min(32000, Number(requestedMax))) : baseMaxTokens;
     // Но не больше доступного в context window
-    const maxTokens = Math.min(baseMaxTokens, Math.max(500, availableTokens));
+    const maxTokens = Math.min(effectiveMax, Math.max(500, availableTokens));
     
     // GPT-4o-mini для всех задач (экономия бюджета, достаточное качество)
     // gpt-4o только в исключительных случаях
@@ -923,6 +943,21 @@ export async function POST(req: NextRequest) {
     
     // Форматируем ответ с цитатами
     const formattedReply = formatResponseWithSources(finalAnswer, sources);
+
+    // Сохраняем ответ в семантический кэш (попытка, но не блокируем ответ при ошибке)
+    (async () => {
+      try {
+        const cacheValue = {
+          reply: formattedReply,
+          sources,
+          intent: intent.action
+        };
+        const inserted = await insertCachedResponse(primaryEmbedding, cacheValue);
+        if (inserted) console.log('[RESPONSE-CACHE] Inserted cached response id=', inserted.id || inserted);
+      } catch (e: any) {
+        console.warn('[RESPONSE-CACHE] Failed to insert cache:', e?.message || e);
+      }
+    })();
     
     // Сохраняем диалог в базу
     let currentConversationId = conversationId;

@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { FaUser, FaRobot, FaPaperPlane, FaCircleExclamation, FaClockRotateLeft, FaPlus, FaXmark, FaComments, FaCopy, FaCheck } from "react-icons/fa6";
+import { FaUser, FaRobot, FaPaperPlane, FaCircleExclamation, FaClockRotateLeft, FaPlus, FaXmark, FaComments, FaCopy, FaCheck, FaSliders } from "react-icons/fa6";
+import ResponseTuner from './ResponseTuner';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
@@ -56,6 +57,8 @@ export default function ChatAssistant() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
   const [showHistory, setShowHistory] = useState(false);
+  const [showTuner, setShowTuner] = useState(false);
+  const [tunerSettings, setTunerSettings] = useState<any>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -73,6 +76,12 @@ export default function ChatAssistant() {
 
     // История разговоров
     loadConversations();
+
+    // Load tuner settings from localStorage
+    try {
+      const stored = localStorage.getItem('responseTuner');
+      if (stored) setTunerSettings(JSON.parse(stored));
+    } catch {}
   }, []);
 
   // KEYBOARD SHORTCUTS
@@ -178,7 +187,8 @@ export default function ChatAssistant() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
           query: currentQuery,
-          conversationId: currentConversationId 
+          conversationId: currentConversationId,
+          settings: tunerSettings || undefined
         }),
       });
       
@@ -250,8 +260,23 @@ export default function ChatAssistant() {
               <FaClockRotateLeft className="text-sm" />
               <span className="hidden sm:inline">История ({conversations.length})</span>
             </button>
+            <button
+              onClick={() => setShowTuner(!showTuner)}
+              className="px-3 py-2 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-lg flex items-center gap-2 text-sm transition shadow"
+              title="Настройки ответов"
+            >
+              <FaSliders />
+            </button>
           </div>
         </div>
+
+        {showTuner && (
+          <ResponseTuner
+            settings={tunerSettings}
+            onChange={(s) => setTunerSettings(s)}
+            onClose={() => setShowTuner(false)}
+          />
+        )}
 
         {/* History Sidebar */}
         {showHistory && (
