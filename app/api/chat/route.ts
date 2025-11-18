@@ -878,12 +878,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'OpenAI API key не настроен' }, { status: 500 });
     }
 
-    // Выбираем промпт в зависимости от намерения
-    const promptKey = (intent.action === 'analyze' || intent.action === 'compare') && intent.target === 'all' 
-      ? 'multi_analyze' 
-      : intent.action;
-    const systemPrompt = AGENT_PROMPTS[promptKey as keyof typeof AGENT_PROMPTS];
-    console.log('[AGENT] Using system prompt for:', promptKey);
+    // Определяем, требуется ли глубокий синтез
+    const requiresDeepSynthesis = intent.action === 'analyze' || intent.action === 'compare' ||
+                    (intent.action === 'qa' && query.length > 50); // Длинные QA-запросы тоже нуждаются в синтезе
+
+    // Выбираем промпт в зависимости от намерения: приоритет экспертному синтезу
+    let finalPromptKey: keyof typeof AGENT_PROMPTS = intent.action as keyof typeof AGENT_PROMPTS;
+    if (requiresDeepSynthesis) {
+      finalPromptKey = 'synthesis_expert' as keyof typeof AGENT_PROMPTS;
+    } else if ((intent.action === 'analyze' || intent.action === 'compare') && intent.target === 'all') {
+      finalPromptKey = 'multi_analyze' as keyof typeof AGENT_PROMPTS;
+    }
+    const systemPrompt = AGENT_PROMPTS[finalPromptKey];
+    console.log('[AGENT] Using system prompt for:', finalPromptKey);
 
     // Настройки генерации в зависимости от типа задачи
     // Аналитика требует больше токенов и меньше креативности
@@ -930,7 +937,6 @@ export async function POST(req: NextRequest) {
     const modelName = 'gpt-4o-mini';
     
     console.log('[GENERATION PARAMS]', { 
-      promptKey, 
       model: modelName,
       temperature, 
       maxTokens,
