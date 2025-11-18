@@ -2,11 +2,27 @@
 import dynamic from 'next/dynamic';
 import { useEffect, useRef, useState } from 'react';
 
+type GraphNode = {
+  id: string;
+  name?: string;
+  url?: string;
+  title?: string;
+  created_at?: string;
+  x?: number;
+  y?: number;
+};
+
+type GraphLink = {
+  source: string;
+  target: string;
+  weight?: number;
+};
+
 // Dynamically import to avoid SSR issues and reduce initial bundle
 const ForceGraph2D = dynamic(() => import('react-force-graph-2d'), { ssr: false });
 
 export default function DocumentGraph({ centerId }: { centerId: string }) {
-  const [data, setData] = useState({ nodes: [], links: [] as any[] });
+  const [data, setData] = useState<{ nodes: GraphNode[]; links: GraphLink[] }>({ nodes: [], links: [] });
   const [method, setMethod] = useState<string>('cosine_avg_chunks');
   const [minWeight, setMinWeight] = useState<number>(0.5);
   const [limit, setLimit] = useState<number>(500);
@@ -84,7 +100,7 @@ export default function DocumentGraph({ centerId }: { centerId: string }) {
         <input placeholder="Find node by id/title" value={queryNode} onChange={e => setQueryNode(e.target.value)} className="ml-2 border rounded px-2 py-1" />
         <button className="ml-1 btn" onClick={() => {
           if (!queryNode || !fgRef.current) return;
-          const target = data.nodes.find((n: any) => (n.id === queryNode) || (n.name && n.name.toLowerCase().includes(queryNode.toLowerCase())));
+          const target = data.nodes.find((n) => (n.id === queryNode) || (n.name && n.name.toLowerCase().includes(queryNode.toLowerCase()))) as GraphNode | undefined;
           if (target && typeof target.x === 'number' && typeof target.y === 'number') {
             fgRef.current.centerAt(target.x, target.y, 400);
             fgRef.current.zoom(6, 400);
