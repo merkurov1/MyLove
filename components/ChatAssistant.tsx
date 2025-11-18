@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import Link from 'next/link';
 import { FaUser, FaRobot, FaPaperPlane, FaCircleExclamation, FaClockRotateLeft, FaPlus, FaXmark, FaComments, FaCopy, FaCheck, FaSliders, FaThumbsUp, FaThumbsDown, FaFlag } from "react-icons/fa6";
 import ResponseTuner from './ResponseTuner';
 import ReactMarkdown from 'react-markdown';
@@ -301,6 +302,9 @@ export default function ChatAssistant() {
               <FaPlus className="text-sm" />
               <span className="hidden sm:inline">Новый чат</span>
             </button>
+            <Link href="/graph" className="px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg flex items-center gap-2 text-sm transition shadow" title="Граф">
+              <span className="hidden sm:inline">Граф</span>
+            </Link>
             <button
               onClick={() => setShowHistory(!showHistory)}
               className="px-4 py-2 bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 rounded-lg flex items-center gap-2 text-sm transition shadow"

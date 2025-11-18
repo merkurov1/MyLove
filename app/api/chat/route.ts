@@ -257,6 +257,66 @@ export async function POST(req: NextRequest) {
       process.env.SUPABASE_SERVICE_ROLE_KEY
     );
 
+    // Special-case: user asked for all articles from a specific source (e.g., Novaya Gazeta)
+    const isAllArticlesQuery = mentionsNovajaGazeta && (
+      lowerQuery.includes('все') || lowerQuery.includes('список') || lowerQuery.includes('список статей') || lowerQuery.includes('все статьи') || lowerQuery.includes('статьи')
+    );
+
+    if (isAllArticlesQuery) {
+      try {
+        console.log('[ALL-ARTICLES] Detected request to list articles for Novaya Gazeta - fetching documents by source_url and chunk content');
+
+        // First try to find by source_url domain
+        const { data: docsByUrl, error: docsErr } = await supabase
+          .from('documents')
+          .select('id, title, source_url, created_at')
+          .ilike('source_url', '%novayagazeta%')
+          .order('created_at', { ascending: false })
+          .limit(500);
+
+        let docs = docsByUrl || [];
+
+        // Fallback: search in chunks for mentions if no documents found by URL
+        if ((!docs || docs.length === 0)) {
+          console.log('[ALL-ARTICLES] No documents found by source_url, scanning chunks for mentions...');
+          const { data: chunkHits } = await supabase
+            .from('document_chunks')
+            .select('document_id')
+            .or("content.ilike.%новая газет%,content.ilike.%новой газет%,content.ilike.%новую газет%")
+            .limit(1000);
+
+          const docIds = Array.from(new Set((chunkHits || []).map((c: any) => c.document_id).filter(Boolean)));
+          if (docIds.length > 0) {
+            const { data: docsFromChunks } = await supabase
+              .from('documents')
+              .select('id, title, source_url, created_at')
+              .in('id', docIds)
+              .order('created_at', { ascending: false });
+            docs = docsFromChunks || [];
+          }
+        }
+
+        if (!docs || docs.length === 0) {
+          return NextResponse.json({ reply: '⚠️ Не найдено статей по запросу «Новая Газета». Попробуйте уточнить формулировку или проверить источник.' });
+        }
+
+        // Format a markdown list of found documents
+        const lines = docs.map((d: any) => {
+          const title = d.title || '(без заголовка)';
+          const url = d.source_url || '';
+          const date = d.created_at ? new Date(d.created_at).toISOString().split('T')[0] : '';
+          return `- ${url ? `[${title}](${url})` : title}${date ? ` — ${date}` : ''}`;
+        });
+
+        const replyMarkdown = `Найденные статьи (Новая Газета):\n\n${lines.join('\n')}`;
+
+        return NextResponse.json({ reply: replyMarkdown, intent: intent.action });
+      } catch (allErr: any) {
+        console.error('[ALL-ARTICLES] Failed to fetch articles', allErr?.message || allErr);
+        return NextResponse.json({ reply: 'Ошибка при поиске статей.' }, { status: 500 });
+      }
+    }
+
   // Используем гибридный поиск (keyword + vector) для лучшей точности
     let matchCount = DEFAULT_MATCH_COUNT;
     

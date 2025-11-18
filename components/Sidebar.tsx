@@ -3,7 +3,7 @@ import React, { useState } from "react";
 import StatsPanel from "./StatsPanel";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { FaComments, FaDatabase, FaBars, FaTimes, FaChevronLeft, FaChevronRight } from "react-icons/fa";
+import { FaComments, FaDatabase, FaBars, FaTimes, FaChevronLeft, FaChevronRight, FaProjectDiagram } from "react-icons/fa";
 
 interface SidebarProps {
   isCollapsed: boolean;
@@ -19,6 +19,7 @@ export default function Sidebar({ isCollapsed, onToggleCollapse }: SidebarProps)
   const navLinks = [
     { href: "/", label: "Чат", icon: FaComments },
     { href: "/database", label: "Документы", icon: FaDatabase },
+    { href: "/graph", label: "Граф", icon: FaProjectDiagram },
   ];
 
   return (

@@ -20,7 +20,20 @@ async function main() {
 
   if (!url || !key) {
     console.error('Missing SUPABASE env vars (NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY)');
+    console.error('Example:');
+    console.error('  export NEXT_PUBLIC_SUPABASE_URL="https://xyzabc.supabase.co"');
+    console.error('  export SUPABASE_SERVICE_ROLE_KEY="<service-role-key>"');
     process.exit(1);
+  }
+
+  // Validate URL format to provide clearer error messages than supabase client
+  try {
+    const parsed = new URL(url);
+    if (!parsed.protocol || !parsed.hostname) throw new Error('invalid');
+  } catch (e) {
+    console.error('Invalid NEXT_PUBLIC_SUPABASE_URL:', url);
+    console.error('It should look like: https://<project-ref>.supabase.co (no angle brackets)');
+    process.exit(2);
   }
 
   const supabase = createClient(url, key, { auth: { persistSession: false } });
