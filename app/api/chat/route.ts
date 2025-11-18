@@ -300,12 +300,26 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({ reply: '⚠️ Не найдено статей по запросу «Новая Газета». Попробуйте уточнить формулировку или проверить источник.' });
         }
 
-        // Format a markdown list of found documents
+        // Helper: try to extract publication date from URL like /YYYY/MM/DD/
+        const extractDateFromUrl = (u: string | undefined) => {
+          if (!u) return null;
+          try {
+            const m = u.match(/\/(20\d{2})\/(0[1-9]|1[0-2])\/(0[1-9]|[12][0-9]|3[01])\//);
+            if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+          } catch (e) {
+            // ignore
+          }
+          return null;
+        };
+
+        // Format a markdown list of found documents: show title and publication date (prefer extracted date from URL)
         const lines = docs.map((d: any) => {
           const title = d.title || '(без заголовка)';
           const url = d.source_url || '';
-          const date = d.created_at ? new Date(d.created_at).toISOString().split('T')[0] : '';
-          return `- ${url ? `[${title}](${url})` : title}${date ? ` — ${date}` : ''}`;
+          const pubDate = extractDateFromUrl(url) || (d.published_at || d.publication_date) || (d.created_at ? new Date(d.created_at).toISOString().split('T')[0] : '');
+          // show title (linked) and the publication date; do not display DB insertion date when URL contains a publication date
+          const datePart = pubDate ? ` — ${pubDate}` : '';
+          return `- ${url ? `[${title}](${url})` : title}${datePart}`;
         });
 
         const replyMarkdown = `Найденные статьи (Новая Газета):\n\n${lines.join('\n')}`;
