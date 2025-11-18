@@ -82,7 +82,7 @@ export async function adaptiveChunkText(text: string): Promise<ChunkV2[]> {
     let raw: string;
     try {
       raw = await sendPromptToLLM(prompt);
-    } catch (e) {
+    } catch (e: any) {
       console.warn('LLM chunking failed for block, falling back to sentence-split:', e?.message || e);
       // Fallback: naive sentence split
       const fallback = block.split(/(?<=[.!?])\s+/).slice(0, 50);
