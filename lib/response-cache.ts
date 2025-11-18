@@ -3,8 +3,8 @@ import { supabase } from '@/utils/supabase/server'
 export async function findCachedResponse(embedding: number[], similarityThreshold = 0.99) {
   try {
     const { data, error } = await supabase.rpc('find_cached_response', {
-      query_embedding: embedding,
-      similarity_threshold: similarityThreshold
+      p_query_embedding: embedding,
+      p_similarity_threshold: similarityThreshold
     }) as any;
 
     if (error) {
