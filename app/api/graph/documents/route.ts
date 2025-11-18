@@ -3,6 +3,13 @@ import { supabase } from '@/utils/supabase/server';
 
 export const runtime = 'nodejs';
 
+type DocumentRow = {
+  id: string;
+  title?: string | null;
+  source_url?: string | null;
+  created_at?: string | null;
+};
+
 /**
  * GET /api/graph/documents?center=<docId>&radius=1&limit=200
  * Returns nodes and edges for a small subgraph centered at `center` document.
@@ -56,7 +63,9 @@ export async function GET(req: NextRequest) {
       .select('id, title, source_url, created_at')
       .in('id', nodeIds);
 
-    const nodes = (docs || []).map(d => ({ id: d.id, title: d.title, url: d.source_url, created_at: d.created_at }));
+    const docsList = (docs || []) as DocumentRow[];
+
+    const nodes = docsList.map((d: DocumentRow) => ({ id: d.id, title: d.title, url: d.source_url, created_at: d.created_at }));
 
     return NextResponse.json({ nodes, edges });
   } catch (err: any) {

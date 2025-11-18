@@ -25,6 +25,20 @@ import { trackQuery, checkAnomalies, type QueryMetrics } from '@/lib/telemetry';
 
 export const runtime = 'nodejs'; // Changed from edge to support OpenAI SDK
 
+// Provide a loose `process` declaration to satisfy TypeScript in environments
+// where `@types/node` may not be installed during static checks.
+declare const process: any;
+
+function toTitleMap(docs: any[] | null): Map<string, string> {
+  const arr = docs || [];
+  return new Map(arr.map((d: any) => [String(d.id), String(d.title || '')]));
+}
+
+function toMetaMap(docs: any[] | null): Map<string, { url?: string; title?: string }> {
+  const arr = docs || [];
+  return new Map(arr.map((d: any) => [String(d.id), { url: d.source_url, title: d.title }]));
+}
+
 export async function POST(req: NextRequest) {
   const startTime = Date.now();
   console.log(`[${new Date().toISOString()}] Chat API request started`);
@@ -692,7 +706,7 @@ export async function POST(req: NextRequest) {
           .select('id, source_url, title')
           .in('id', documentIds);
         
-        const docMap = new Map(docs?.map((d: any) => [d.id, { url: d.source_url, title: d.title }]) || []);
+        const docMap = toMetaMap(docs as any[]);
         
         // Фильтруем по соответствующему источнику
         filteredMatches = filteredMatches.filter((m: any) => {
@@ -758,7 +772,7 @@ export async function POST(req: NextRequest) {
             .limit(3);
           
           if (chunks && chunks.length > 0) {
-            allChunks.push(`\n\n=== ${doc.title} (${doc.created_at.substring(0, 10)}) ===\n${chunks.map(c => c.content).join('\n')}`);
+            allChunks.push(`\n\n=== ${doc.title} (${doc.created_at.substring(0, 10)}) ===\n${chunks.map((c: any) => c.content).join('\n')}`);
           }
         }
         
@@ -801,7 +815,7 @@ export async function POST(req: NextRequest) {
         if (chunks && chunks.length > 0) {
           // Добавляем метаданные о документе в начало
           const docMetadata = `[ДОКУМЕНТ: "${latestDoc.title}", создан: ${latestDoc.created_at.substring(0, 10)}]\n\n`;
-          contextText = docMetadata + chunks.map(c => c.content).join('\n\n');
+          contextText = docMetadata + chunks.map((c: any) => c.content).join('\n\n');
           console.log('[AGENT] Loaded document:', { 
             chunks: chunks.length,
             limited: !!chunkLimit,
@@ -1008,8 +1022,8 @@ export async function POST(req: NextRequest) {
           .select('id, title')
           .in('id', documentIds);
         
-        const docMap = new Map(docs?.map((d: any) => [d.id, d.title]) || []);
-        sources = extractCitations(filteredMatches, docMap);
+        const docMap = toTitleMap(docs as any[]);
+        sources = extractCitations(filteredMatches, docMap as Map<string, string>);
         
         console.log('[CITATIONS]', { sourcesCount: sources.length });
       }

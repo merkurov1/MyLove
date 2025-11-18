@@ -1,0 +1,58 @@
+
+> mylove-dashboard@0.1.0 build
+> next build
+
+  ▲ Next.js 14.2.33
+
+   Creating an optimized production build ...
+ ✓ Compiled successfully
+   Skipping linting
+   Checking validity of types ...
+   Collecting page data ...
+   Generating static pages (0/28) ...
+   Generating static pages (7/28) 
+   Generating static pages (14/28) 
+[GRAPH API] Error Dynamic server usage: Route /api/graph/documents couldn't be rendered statically because it used `request.url`. See more info here: https://nextjs.org/docs/messages/dynamic-server-error
+   Generating static pages (21/28) 
+ ✓ Generating static pages (28/28)
+   Finalizing page optimization ...
+   Collecting build traces ...
+
+Route (app)                              Size     First Load JS
+┌ ○ /                                    51 kB           148 kB
+├ ○ /_not-found                          873 B          88.2 kB
+├ ○ /ai                                  142 B          87.4 kB
+├ ƒ /api/admin/extract-columns           0 B                0 B
+├ ƒ /api/auth                            0 B                0 B
+├ ƒ /api/chat                            0 B                0 B
+├ ƒ /api/conversations                   0 B                0 B
+├ ƒ /api/debug-chunking                  0 B                0 B
+├ ƒ /api/debug-embedding                 0 B                0 B
+├ ƒ /api/documents                       0 B                0 B
+├ ƒ /api/extract/columns                 0 B                0 B
+├ ƒ /api/feedback                        0 B                0 B
+├ ƒ /api/graph/documents                 0 B                0 B
+├ ○ /api/health                          0 B                0 B
+├ ƒ /api/ingest                          0 B                0 B
+├ ƒ /api/ingest/debug                    0 B                0 B
+├ ƒ /api/process                         0 B                0 B
+├ ƒ /api/search                          0 B                0 B
+├ ƒ /api/search/playground               0 B                0 B
+├ ƒ /api/sources                         0 B                0 B
+├ ○ /api/stats                           0 B                0 B
+├ ƒ /api/test                            0 B                0 B
+├ ○ /database                            7.36 kB        97.3 kB
+├ ƒ /graph                               2.34 kB         106 kB
+├ ○ /login                               1.33 kB        88.6 kB
+└ ○ /search                              1.72 kB          89 kB
++ First Load JS shared by all            87.3 kB
+  ├ chunks/117-19ce9fb2efb129eb.js       31.7 kB
+  ├ chunks/fd9d1056-f5b756eb3c67ca11.js  53.6 kB
+  └ other shared chunks (total)          1.93 kB
+
+
+ƒ Middleware                             25.7 kB
+
+○  (Static)   prerendered as static content
+ƒ  (Dynamic)  server-rendered on demand
+

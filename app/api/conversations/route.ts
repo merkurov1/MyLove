@@ -4,6 +4,20 @@ import { supabase } from '@/utils/supabase/server';
 
 export const runtime = 'nodejs';
 
+// Minimal row types for this route to avoid implicit `any` in callbacks
+type ConversationRow = {
+  id: string;
+  title?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
+type MessageRow = {
+  content?: string | null;
+  role?: string | null;
+  created_at?: string | null;
+};
+
 /**
  * GET /api/conversations
  * Возвращает список всех разговоров с последним сообщением
@@ -23,8 +37,10 @@ export async function GET(request: NextRequest) {
     }
 
     // Для каждого разговора получаем последнее сообщение
+    const conversationsList = (conversations || []) as ConversationRow[];
+
     const conversationsWithLastMessage = await Promise.all(
-      (conversations || []).map(async (conv) => {
+      conversationsList.map(async (conv: ConversationRow) => {
         const { data: messages } = await supabase
           .from('messages')
           .select('content, role, created_at')
@@ -32,9 +48,11 @@ export async function GET(request: NextRequest) {
           .order('created_at', { ascending: false })
           .limit(1);
 
+        const messagesList = (messages || []) as MessageRow[];
+
         return {
           ...conv,
-          lastMessage: messages?.[0] || null,
+          lastMessage: messagesList?.[0] || null,
         };
       })
     );
