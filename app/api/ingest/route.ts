@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabase } from '@/utils/supabase/server'
-import { splitIntoChunks } from '@/lib/chunking'
+import { adaptiveChunkText } from '@/lib/chunking-v2'
+import { getEmbedding } from '@/lib/embedding-ai'
 import crypto from 'crypto'
 
 // core Node modules (require at runtime)
@@ -143,27 +144,34 @@ export async function POST(req: NextRequest) {
     text = (text || '').replace(/\u0000/g, '').replace(/[\uFFFE\uFFFF]/g, '').trim()
     if (!text) return NextResponse.json({ error: 'empty_or_unreadable' }, { status: 400 })
 
-    const chunks = splitIntoChunks(text, 2000, 200)
-    if (!chunks.length) return NextResponse.json({ error: 'chunking_failed' }, { status: 400 })
-
-    // load embeddings helper dynamically
-    let getEmbeddings: any = null
-    try {
-      getEmbeddings = (await import('../../../lib/embedding-ai')).getEmbeddings
-    } catch (e) {
-      try { getEmbeddings = tryRequire('../../../lib/embedding-ai')?.getEmbeddings } catch (e2) { /* noop */ }
-    }
-    if (!getEmbeddings) return NextResponse.json({ error: 'embeddings_unavailable' }, { status: 500 })
-
-    const embeddings = await getEmbeddings(chunks)
-    if (!embeddings || embeddings.length !== chunks.length) return NextResponse.json({ error: 'embeddings_mismatch' }, { status: 500 })
-
+    // 1. Вставляем документ и получаем doc.id
     const { data: doc, error: docError } = await supabase.from('documents').insert({ title: file.name, description: `Uploaded file: ${file.name}`, source_url: null, source_id: sourceId || process.env.DEFAULT_SOURCE_ID }).select().single()
     if (docError || !doc) return NextResponse.json({ error: 'document_create_failed', supabaseError: docError }, { status: 500 })
 
+    // 2. Удаляем старые чанки для doc.id (idempotency)
+    await supabase.from('document_chunks').delete().eq('document_id', doc.id)
+
+    // 3. Чанкаем текст
+    let chunks: any[] = []
+    try {
+      chunks = await adaptiveChunkText(text)
+    } catch (e) {
+      return NextResponse.json({ error: 'chunking_failed', details: String(e) }, { status: 400 })
+    }
+    if (!chunks || !chunks.length) return NextResponse.json({ error: 'chunking_failed' }, { status: 400 })
+
+    // 4. Получаем эмбеддинги для каждого чанка (batch, p-limit)
+    const pLimit = (await import('p-limit')).default || ((n: number) => (fn: any) => fn());
+    const limit = pLimit(4);
+    const embeddings = await Promise.all(
+      chunks.map((c) => limit(() => getEmbedding(c.text)))
+    );
+    if (!embeddings || embeddings.length !== chunks.length) return NextResponse.json({ error: 'embeddings_mismatch' }, { status: 500 })
+
+    // 5. Формируем строки для вставки
     const clean = (s: string) => s.replace(/\u0000/g, '').replace(/[\uFFFE\uFFFF]/g, '').replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '').trim()
-    const rows = chunks.map((c: string, i: number) => {
-      const cleaned = clean(c)
+    const rows = chunks.map((c: any, i: number) => {
+      const cleaned = clean(c.text)
       if (!cleaned || cleaned.length < 10) return null
       return {
         document_id: doc.id,
@@ -171,12 +179,20 @@ export async function POST(req: NextRequest) {
         content: cleaned,
         embedding: embeddings[i],
         checksum: crypto.createHash('sha256').update(cleaned).digest('hex'),
-        metadata: { source_file: file.name, chunk_length: cleaned.length }
+        metadata: {
+          ...c.metadata,
+          source_file: file.name,
+          chunk_length: cleaned.length,
+          tags: c.tags || [],
+          start: c.start,
+          end: c.end
+        }
       }
     }).filter((r): r is NonNullable<typeof r> => r !== null)
 
     if (!rows.length) return NextResponse.json({ error: 'all_chunks_empty' }, { status: 400 })
 
+    // 6. Вставляем чанки
     const { error: insertErr } = await supabase.from('document_chunks').insert(rows)
     if (insertErr) return NextResponse.json({ error: 'chunk_insert_failed', supabaseError: insertErr }, { status: 500 })
 

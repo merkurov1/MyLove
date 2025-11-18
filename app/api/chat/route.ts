@@ -688,6 +688,18 @@ export async function POST(req: NextRequest) {
 
     let contextText = '';
     let filteredMatches = matches || [];
+
+    // STRICT RAG: If no context, return refusal immediately
+    if ((intent.action === 'qa' || intent.action === 'recipes') && (!filteredMatches || filteredMatches.length === 0)) {
+      return NextResponse.json({
+        reply: intent.action === 'qa'
+          ? 'В предоставленных документах нет информации по вашему вопросу.'
+          : 'В базе знаний рецепты не найдены.',
+        sources: [],
+        intent: intent.action,
+        conversationId: null
+      }, { status: 200 });
+    }
     
     // ФИЛЬТРАЦИЯ: Если запрос о конкретном источнике, фильтруем результаты по source_url
     const needsFiltering = mentionsNovajaGazeta || mentionsSubstack || mentionsCV;
@@ -1010,6 +1022,10 @@ export async function POST(req: NextRequest) {
     // }
     
     let finalAnswer = answer;
+    // Add disclaimer for low-confidence answers (short or generic)
+    if ((intent.action === 'qa' || intent.action === 'recipes') && finalAnswer && finalAnswer.length < 80) {
+      finalAnswer = `${finalAnswer}\n\n⚠️ Ответ может быть неполным. Попробуйте переформулировать вопрос или уточнить детали.`;
+    }
     
     // Получаем информацию о документах для цитат
     let sources: any[] = [];
