@@ -20,6 +20,8 @@ export async function GET(req: NextRequest) {
     const center = url.searchParams.get('center');
     const radius = Number(url.searchParams.get('radius') || '1');
     const limit = Number(url.searchParams.get('limit') || '200');
+    const method = url.searchParams.get('method') || null; // filter edges by method if provided
+    const minWeight = Number(url.searchParams.get('min_weight') || '0');
 
     if (!center) {
       return NextResponse.json({ error: 'center parameter required' }, { status: 400 });
@@ -33,11 +35,19 @@ export async function GET(req: NextRequest) {
     for (let r = 0; r < radius; r++) {
       if (frontier.length === 0) break;
       // fetch outgoing edges from frontier
-      const { data: outEdges } = await supabase
+      let q = supabase
         .from('document_graph')
         .select('source_document_id, target_document_id, weight')
         .in('source_document_id', frontier)
+        .gte('weight', minWeight)
+        .order('weight', { ascending: false })
         .limit(limit);
+
+      if (method) {
+        q = q.eq('method', method);
+      }
+
+      const { data: outEdges } = await q;
 
       if (!outEdges || outEdges.length === 0) break;
 

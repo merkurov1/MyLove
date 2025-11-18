@@ -1,0 +1,27 @@
+Found 8 candidate document ids from chunks
+Loaded 8 documents for classification
+
+Classifying: cef331ba-3c2a-45b7-a2c2-7755628a3f1c 2019 923301f95e74487dbaa2cf5f6101332d.md
+LLM call failed No compatible OpenAI client method found on `openai`.
+
+Classifying: 5349c6f1-8d15-48a7-b4a6-09ad5eda273b 2018 c14e8c44bb9c4b999b1721ec1c5c83b5.md
+LLM call failed No compatible OpenAI client method found on `openai`.
+
+Classifying: 72e071da-8680-45ca-a760-111fd44f8ef6 https://novayagazeta.ru/articles/2025/08/27/udarim-planom-po-internet-moshennikam
+LLM call failed No compatible OpenAI client method found on `openai`.
+
+Classifying: a0a757e7-d156-4dff-8c13-3c77eb5bfd07 https://novayagazeta.ru/articles/2025/08/27/udarim-planom-po-internet-moshennikam
+LLM call failed No compatible OpenAI client method found on `openai`.
+
+Classifying: 62952746-97a1-4a3a-968e-1d7b67c40007 https://novayagazeta.ru/articles/2025/09/20/vyiti-iz-uma
+LLM call failed No compatible OpenAI client method found on `openai`.
+
+Classifying: 14395fd5-a725-40f8-ba25-e8201c4e26ee https://merkurov.substack.com/p/tomorrow-belongs-to-me
+LLM call failed No compatible OpenAI client method found on `openai`.
+
+Classifying: 5f343a24-2807-4d1c-a71d-9601216f1526 https://merkurov.substack.com/p/440
+LLM call failed No compatible OpenAI client method found on `openai`.
+
+Classifying: 91b49469-bbfd-4af6-9e15-5f0635dbac85 https://merkurov.substack.com/p/camino-de-santiago
+LLM call failed No compatible OpenAI client method found on `openai`.
+Classification finished. Results: recipe-classify-results.json
