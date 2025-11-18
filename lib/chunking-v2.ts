@@ -115,7 +115,7 @@ export async function adaptiveChunkText(text: string): Promise<ChunkV2[]> {
           if (s.trim()) results.push({ content: s.trim(), semantic_tag: 'Другое', sentiment: 'Нейтральный' });
         });
       }
-    } catch (parseErr) {
+    } catch (parseErr: any) {
       console.warn('Failed to parse LLM chunking JSON, falling back:', parseErr?.message || parseErr);
       const fallback = block.split(/(?<=[.!?])\s+/).slice(0, 50);
       fallback.forEach(s => {
