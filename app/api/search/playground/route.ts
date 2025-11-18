@@ -81,7 +81,7 @@ export async function POST(req: NextRequest) {
           if (reranked && reranked.length > 0) {
             results = reranked;
           }
-        } catch (rerr) {
+        } catch (rerr: any) {
           console.warn('[PLAYGROUND] Rerank failed', rerr?.message || rerr);
         }
       }

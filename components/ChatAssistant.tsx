@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { FaUser, FaRobot, FaPaperPlane, FaCircleExclamation, FaClockRotateLeft, FaPlus, FaXmark, FaComments, FaCopy, FaCheck, FaSliders } from "react-icons/fa6";
+import { FaUser, FaRobot, FaPaperPlane, FaCircleExclamation, FaClockRotateLeft, FaPlus, FaXmark, FaComments, FaCopy, FaCheck, FaSliders, FaThumbsUp, FaThumbsDown, FaFlag } from "react-icons/fa6";
 import ResponseTuner from './ResponseTuner';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -180,6 +180,7 @@ export default function ChatAssistant() {
     setChatHistory((prev) => [...prev, { role: "user", content: currentQuery, timestamp: new Date() }]);
     setUserInput("");
     setIsLoading(true);
+    setLastUserQuery(currentQuery);
     
     try {
       const res = await fetch("/api/chat", {
@@ -232,6 +233,54 @@ export default function ChatAssistant() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  // Store last user query so 'Regenerate' can reuse it
+  const [lastUserQuery, setLastUserQuery] = useState<string | null>(null);
+
+  const regenerateLast = async () => {
+    if (!lastUserQuery) return;
+    setIsLoading(true);
+    setChatHistory((prev) => [...prev, { role: "user", content: lastUserQuery, timestamp: new Date() }]);
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: lastUserQuery, conversationId: currentConversationId, settings: tunerSettings || undefined })
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setChatHistory((prev) => [...prev, { role: 'error', content: data.error || 'Ошибка при регенерации' }]);
+        return;
+      }
+      const data = await res.json();
+      const parsed = parseResponse(data.reply || 'Нет ответа.');
+      setChatHistory((prev) => [...prev, { role: 'assistant', content: parsed.answer, sources: parsed.sources, timestamp: new Date() }]);
+      loadConversations();
+    } catch (err) {
+      setChatHistory((prev) => [...prev, { role: 'error', content: 'Не удалось регенерировать ответ' }]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const sendFeedback = async (messageText: string, type: string, reason?: string) => {
+    try {
+      await fetch('/api/feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ conversationId: currentConversationId, message: messageText, feedbackType: type, reason })
+      });
+    } catch (err) {
+      console.warn('Failed to send feedback', err);
+    }
+  };
+
+  const openFirstSourceUrl = (sourcesText?: string) => {
+    if (!sourcesText) return;
+    // crude URL extraction
+    const m = sourcesText.match(/https?:\/\/[^\s)]+/);
+    if (m && m[0]) window.open(m[0], '_blank');
   };
 
   return (
@@ -425,8 +474,15 @@ export default function ChatAssistant() {
                     )}
                     {msg.sources && (
                       <div className="border-t border-gray-200 dark:border-gray-600 pt-3 mt-4">
-                        <div className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2 font-semibold">
-                          📚 Источники:
+                        <div className="flex items-center justify-between">
+                          <div className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-2 font-semibold">📚 Источники:</div>
+                          <div className="flex items-center gap-2">
+                            <button onClick={() => openFirstSourceUrl(msg.sources)} className="text-xs text-blue-600 hover:underline">Открыть первый источник</button>
+                            <button onClick={() => { sendFeedback(msg.content, 'thumbs_up'); }} title="Полезно" className="text-green-600"><FaThumbsUp /></button>
+                            <button onClick={() => { sendFeedback(msg.content, 'thumbs_down'); }} title="Не помогло" className="text-red-600"><FaThumbsDown /></button>
+                            <button onClick={() => { sendFeedback(msg.content, 'wrong_source'); }} title="Неверный источник" className="text-yellow-600"><FaFlag /></button>
+                            <button onClick={regenerateLast} title="Regenerate" className="text-gray-600">⟲</button>
+                          </div>
                         </div>
                         <div className="prose prose-xs dark:prose-invert max-w-none text-gray-600 dark:text-gray-400 prose-p:my-1 prose-ul:my-1 prose-li:my-0.5 prose-code:text-xs">
                           <ReactMarkdown remarkPlugins={[remarkGfm]}>

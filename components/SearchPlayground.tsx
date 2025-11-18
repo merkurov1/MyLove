@@ -52,7 +52,17 @@ export default function SearchPlayground() {
         <div className="space-y-3">
           {results.map((r, i) => (
             <div key={i} className="p-3 border rounded">
-              <div className="text-xs text-gray-500">id: {r.id || r.document_id} • sim: {(r.similarity ?? r.final_score ?? 0).toFixed ? (r.similarity ?? r.final_score ?? 0).toFixed(3) : String(r.similarity)}</div>
+              <div className="flex items-center justify-between">
+                <div className="text-xs text-gray-500">id: {r.id || r.document_id}</div>
+                <div className="text-xs flex items-center gap-2">
+                  {/* similarity badge */}
+                  <span className="px-2 py-0.5 bg-gray-100 rounded text-xs text-gray-700">{((r.similarity ?? r.final_score ?? 0) * 100).toFixed(1)}%</span>
+                  {/* open source link if available */}
+                  { (r.source_url || r.source) && (
+                    <a href={r.source_url || r.source} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline text-xs">Open source</a>
+                  )}
+                </div>
+              </div>
               <div className="mt-2 text-sm whitespace-pre-wrap">{r.content || r.quote || r.content_preview || ''}</div>
             </div>
           ))}
