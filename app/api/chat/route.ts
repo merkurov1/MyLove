@@ -159,6 +159,46 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Нет запроса' }, { status: 400 });
     }
 
+    // BASIC GREETINGS HANDLER: Handle simple greetings without RAG
+    const lowerQuery = query.toLowerCase().trim();
+    const userLang = detectLanguage(query);
+    
+    const greetingsEn = ['hello', 'hi', 'hey', 'good morning', 'good afternoon', 'good evening'];
+    const greetingsRu = ['привет', 'здравствуй', 'здравствуйте', 'добрый день', 'доброе утро', 'добрый вечер'];
+    const smallTalkEn = ['how are you', 'how are you doing', 'what\'s up', 'whats up', 'wassup'];
+    const smallTalkRu = ['как дела', 'как ты', 'как поживаешь', 'что нового', 'чё как'];
+    
+    const isGreeting = greetingsEn.some(g => lowerQuery === g || lowerQuery.startsWith(g + ' ')) ||
+                      greetingsRu.some(g => lowerQuery === g || lowerQuery.startsWith(g + ' '));
+    const isSmallTalk = smallTalkEn.some(s => lowerQuery.includes(s)) ||
+                       smallTalkRu.some(s => lowerQuery.includes(s));
+    
+    if (isGreeting || isSmallTalk) {
+      console.log('[GREETING] Basic greeting detected, responding without RAG');
+      
+      const greetingResponses = {
+        en: [
+          "Pierrot here.\nWhat are you looking for?",
+          "Hello.\nArt or questions?",
+          "Pierrot.\nTell me what you need."
+        ],
+        ru: [
+          "Пьеро.\nЧто ищете?",
+          "Здравствуйте.\nИскусство или вопросы?",
+          "Пьеро на связи.\nЧто вам нужно?"
+        ]
+      };
+      
+      const responses = userLang === 'ru' ? greetingResponses.ru : greetingResponses.en;
+      const randomResponse = responses[Math.floor(Math.random() * responses.length)];
+      
+      return NextResponse.json({ 
+        reply: randomResponse,
+        intent: 'greeting',
+        conversationId: conversationId || null
+      });
+    }
+
     if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
       console.error(`[${new Date().toISOString()}] Supabase config missing`);
       return NextResponse.json({ error: 'Supabase не настроен' }, { status: 500 });
