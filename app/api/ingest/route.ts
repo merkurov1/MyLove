@@ -188,14 +188,30 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'chunking_failed' }, { status: 400 })
     }
 
-    // 4. Получаем эмбеддинги для каждого чанка (batch, p-limit)
-    stepLog('Embedding started', { chunkCount: chunks.length });
+    // 3.1. Валидация чанков: фильтруем пустые, слишком короткие или невалидные тексты
+    const MIN_CHUNK_LENGTH = 10;
+    const validChunks = chunks.filter((c, i) => {
+      const t = (c.text || '').replace(/\u0000/g, '').replace(/[\uFFFE\uFFFF]/g, '').trim();
+      if (!t || t.length < MIN_CHUNK_LENGTH) {
+        stepLog('Skipping invalid chunk', { index: i, length: t.length, preview: t.substring(0, 40) });
+        return false;
+      }
+      return true;
+    });
+    if (!validChunks.length) {
+      stepLog('All chunks invalid/empty after validation, cleanup doc', { docId: doc.id });
+      await supabase.from('documents').delete().eq('id', doc.id);
+      return NextResponse.json({ error: 'all_chunks_invalid' }, { status: 400 })
+    }
+
+    // 4. Получаем эмбеддинги для каждого валидного чанка (batch, p-limit)
+    stepLog('Embedding started', { chunkCount: validChunks.length });
     const pLimit = (await import('p-limit')).default || ((n: number) => (fn: any) => fn());
     const limit = pLimit(4);
     let embeddings: any[] = [];
     try {
       embeddings = await Promise.all(
-        chunks.map((c) => limit(() => getEmbedding(c.text)))
+        validChunks.map((c) => limit(() => getEmbedding(c.text)))
       );
       stepLog('Embedding finished', { embeddings: embeddings.length });
     } catch (e) {
@@ -203,7 +219,7 @@ export async function POST(req: NextRequest) {
       await supabase.from('documents').delete().eq('id', doc.id);
       return NextResponse.json({ error: 'embeddings_failed', details: String(e) }, { status: 500 })
     }
-    if (!embeddings || embeddings.length !== chunks.length) {
+    if (!embeddings || embeddings.length !== validChunks.length) {
       stepLog('Embeddings mismatch, cleanup doc', { docId: doc.id });
       await supabase.from('documents').delete().eq('id', doc.id);
       return NextResponse.json({ error: 'embeddings_mismatch' }, { status: 500 })
@@ -211,9 +227,8 @@ export async function POST(req: NextRequest) {
 
     // 5. Формируем строки для вставки
     const clean = (s: string) => s.replace(/\u0000/g, '').replace(/[\uFFFE\uFFFF]/g, '').replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '').trim()
-    const rows = chunks.map((c: any, i: number) => {
+    const rows = validChunks.map((c: any, i: number) => {
       const cleaned = clean(c.text)
-      if (!cleaned || cleaned.length < 10) return null
       return {
         document_id: doc.id,
         chunk_index: i,
@@ -229,10 +244,9 @@ export async function POST(req: NextRequest) {
           end: c.end
         }
       }
-    }).filter((r): r is NonNullable<typeof r> => r !== null)
-
+    });
     if (!rows.length) {
-      stepLog('All chunks empty after cleaning, cleanup doc', { docId: doc.id });
+      stepLog('All valid chunks empty after cleaning, cleanup doc', { docId: doc.id });
       await supabase.from('documents').delete().eq('id', doc.id);
       return NextResponse.json({ error: 'all_chunks_empty' }, { status: 400 })
     }
