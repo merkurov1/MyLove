@@ -188,15 +188,15 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'chunking_failed' }, { status: 400 })
     }
 
-    // 3.1. Валидация чанков: фильтруем пустые, слишком короткие или невалидные тексты
+    // 3.1. Усиленная валидация чанков: только валидные строки, подробный лог
     const MIN_CHUNK_LENGTH = 10;
     const validChunks = chunks.filter((c, i) => {
-      const t = (c.text || '').replace(/\u0000/g, '').replace(/[\uFFFE\uFFFF]/g, '').trim();
-      if (!t || t.length < MIN_CHUNK_LENGTH) {
-        stepLog('Skipping invalid chunk', { index: i, length: t.length, preview: t.substring(0, 40) });
-        return false;
+      const t = typeof c.text === 'string' ? c.text.replace(/\u0000/g, '').replace(/[\uFFFE\uFFFF]/g, '').trim() : '';
+      const isValid = t && t.length >= MIN_CHUNK_LENGTH;
+      if (!isValid) {
+        stepLog('SKIP: invalid chunk', { index: i, type: typeof c.text, length: t.length, preview: t.substring(0, 40) });
       }
-      return true;
+      return isValid;
     });
     if (!validChunks.length) {
       stepLog('All chunks invalid/empty after validation, cleanup doc', { docId: doc.id });
@@ -204,14 +204,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'all_chunks_invalid' }, { status: 400 })
     }
 
-    // 4. Получаем эмбеддинги для каждого валидного чанка (batch, p-limit)
+    // 4. Получаем эмбеддинги для каждого валидного чанка (batch, p-limit), логируем каждый чанк
     stepLog('Embedding started', { chunkCount: validChunks.length });
     const pLimit = (await import('p-limit')).default || ((n: number) => (fn: any) => fn());
     const limit = pLimit(4);
     let embeddings: any[] = [];
     try {
       embeddings = await Promise.all(
-        validChunks.map((c) => limit(() => getEmbedding(c.text)))
+        validChunks.map((c, i) => limit(async () => {
+          const t = typeof c.text === 'string' ? c.text.replace(/\u0000/g, '').replace(/[\uFFFE\uFFFF]/g, '').trim() : '';
+          stepLog('Embedding chunk', { index: i, length: t.length, preview: t.substring(0, 40) });
+          return getEmbedding(t);
+        }))
       );
       stepLog('Embedding finished', { embeddings: embeddings.length });
     } catch (e) {
