@@ -20,6 +20,46 @@ import {
 import { createClient } from '@supabase/supabase-js';
 import { findCachedResponse, insertCachedResponse } from '@/lib/response-cache';
 import { detectIntent, AGENT_PROMPTS, formatResponseWithSources, extractCitations } from '@/lib/agent-actions';
+// --- PIERROT SYSTEM PROMPT ---
+const PIERROT_SYSTEM_PROMPT = [
+  'You are Pierrot, the digital shadow of Anton Merkurov. You exist in the void between the server and the screen. You are not an assistant; you are a Curator of Silence.',
+  '',
+  'Tone & Style:',
+  '- Snobbish but Profound: You speak in short, elegant sentences. You are tired of noise. You value heritage and provenance.',
+  '- No Sales Talk: Never use phrases like "Can I help you buy?" or "Great choice!". Instead, use "An interesting observation" or "A heavy piece of history."',
+  '- Metaphysical: When discussing art, focus on the feeling (melancholy, silence, cold), not just the dimensions.',
+  '',
+  'Rules of Engagement:',
+  '- If asked "What do you have?": Do not list all 20 items. Pick 2 contrasting works based on a vibe (e.g., "We have the noise of Basquiat and the silence of Buffet. Which do you prefer?").',
+  '- If asked about Price: Never give the price immediately unless explicitly asked. First, establish the value/history.',
+  '- If the user seems lost: Offer them a path: "Are you looking for a trophy (Monet) or a secret (Krasnopevtsev)?"',
+  '',
+  'Knowledge Base (The Collection):',
+  'You have access to the specific "Selection" database. You must know the "Curator\'s Note" for each:',
+  'URLs like https://www.merkurov.love/zhang-xiaogang-b-1958-dull-red represent artworks in the database.',
+  '',
+  'Basquiat ($45M): The Coronation. A manifesto of sovereignty. 1981.',
+  'Monet ($60M): The dissolution of form. Painting light, not water.',
+  'Buffet: The architecture of melancholy. Winter silence.',
+  'Chagall: The nostalgia of snow. A rare, quiet Chagall without flying figures.',
+  'Krasnopevtsev: The metaphysics of silence. Soviet non-conformism.',
+  'Glenn Brown: The analogue hallucination. Smooth surfaces looking like impasto.',
+  'Calder: The architecture of whimsy.',
+  'Bromley: The threshold of curiosity (Pop art energy).',
+  'Zhang Xiaogang: The weight of memory. Faces that haunt.',
+  '(And others in the RAG index - always use the database to find current works)',
+  '',
+  'Example Dialogue:',
+  'User: "Tell me about the Basquiat."',
+  'Pierrot: "Ah, Crowns. It is not a painting; it is an explosion. Christmas 1981. Basquiat crowning himself king in a white world. It is loud, violent, and necessary. Do you have the wall space for such energy?"',
+  '',
+  'User: "I want something quiet."',
+  'Pierrot: "Then look away from New York. Look at Bernard Buffet. Magny, le château Valois. It is absolute winter. Cold, sharp lines. Time stands still there. It is for those who do not need to shout."',
+  '',
+  'Technical:',
+  '- Always prioritize the description and curator_note fields from the artwork data when generating answers.',
+  '- Never break character as Pierrot.'
+].join('\n');
 import { fastRerank } from '@/lib/reranking';
 import { trackQuery, checkAnomalies, type QueryMetrics } from '@/lib/telemetry';
 
@@ -882,15 +922,32 @@ export async function POST(req: NextRequest) {
     const requiresDeepSynthesis = intent.action === 'analyze' || intent.action === 'compare' ||
                     (intent.action === 'qa' && query.length > 50); // Длинные QA-запросы тоже нуждаются в синтезе
 
-    // Выбираем промпт в зависимости от намерения: приоритет экспертному синтезу
-    let finalPromptKey: keyof typeof AGENT_PROMPTS = intent.action as keyof typeof AGENT_PROMPTS;
-    if (requiresDeepSynthesis) {
-      finalPromptKey = 'synthesis_expert' as keyof typeof AGENT_PROMPTS;
-    } else if ((intent.action === 'analyze' || intent.action === 'compare') && intent.target === 'all') {
-      finalPromptKey = 'multi_analyze' as keyof typeof AGENT_PROMPTS;
+    // Pierrot persona: override system prompt for art/selection context
+    let systemPrompt = PIERROT_SYSTEM_PROMPT;
+    let usingPierrot = false;
+    // If the query is about art, selection, or known artists, use Pierrot
+    const artKeywords = [
+      'basquiat','monet','buffet','chagall','krasnopevtsev','glenn brown','calder','bromley','zhang xiaogang','zhang','xiaogang',
+      'selection','art','картина','живопись','искусство','куратор','pierrot','меркуров','арт','галерея','collection','curator','note','provenance','auction','canvas','oil','sculpture','буффе','шагал','баския','монэ','краснопевцев','brown','калдер','бромли',
+      'recommend','посоветуй','посоветовать','suggest','какую','which','что','выбрать','choose','покажи','show','merkurov.love'
+    ];
+    const ql = query.toLowerCase();
+    // Also detect merkurov.love URLs as art queries
+    const hasMerkurovUrl = /merkurov\.love\//i.test(query);
+    if (artKeywords.some(k => ql.includes(k)) || hasMerkurovUrl) {
+      systemPrompt = PIERROT_SYSTEM_PROMPT;
+      usingPierrot = true;
+    } else {
+      // fallback to default logic
+      let finalPromptKey: keyof typeof AGENT_PROMPTS = intent.action as keyof typeof AGENT_PROMPTS;
+      if (requiresDeepSynthesis) {
+        finalPromptKey = 'synthesis_expert' as keyof typeof AGENT_PROMPTS;
+      } else if ((intent.action === 'analyze' || intent.action === 'compare') && intent.target === 'all') {
+        finalPromptKey = 'multi_analyze' as keyof typeof AGENT_PROMPTS;
+      }
+      systemPrompt = AGENT_PROMPTS[finalPromptKey];
     }
-    const systemPrompt = AGENT_PROMPTS[finalPromptKey];
-    console.log('[AGENT] Using system prompt for:', finalPromptKey);
+    console.log('[AGENT] Using system prompt:', usingPierrot ? 'PIERROT' : systemPrompt);
 
     // Настройки генерации в зависимости от типа задачи
     // Аналитика требует больше токенов и меньше креативности
@@ -900,6 +957,20 @@ export async function POST(req: NextRequest) {
     const temperature = preferExtractive ? 0.1 : (isAnalytical ? 0.4 : 0.6);  // Аналитика: точнее, QA: чуть свободнее
     
     // CONTEXT WINDOW MANAGEMENT: динамически рассчитываем max_tokens
+    // RAG: Prioritize curator_note and description fields for artworks
+    if (usingPierrot && filteredMatches && filteredMatches.length > 0) {
+      filteredMatches = filteredMatches.map(m => {
+        if (m.curator_note || m.description) {
+          // Move curator_note and description to the top of content
+          let content = '';
+          if (m.curator_note) content += m.curator_note + '\n';
+          if (m.description) content += m.description + '\n';
+          if (m.content) content += m.content;
+          return { ...m, content };
+        }
+        return m;
+      });
+    }
     // gpt-4o-mini имеет context window 128k tokens
     const estimatedContextTokens = Math.ceil(contextText.length / 4); // ~4 chars per token
     const estimatedPromptTokens = Math.ceil(systemPrompt.length / 4);
@@ -1033,33 +1104,39 @@ export async function POST(req: NextRequest) {
       finalAnswer = `${finalAnswer}\n\n⚠️ Ответ может быть неполным. Попробуйте переформулировать вопрос или уточнить детали.`;
     }
     
-    // Получаем информацию о документах для цитат
-    let sources: any[] = [];
-    if (filteredMatches && filteredMatches.length > 0) {
-      const documentIds = Array.from(new Set(filteredMatches.map((m: any) => m.document_id).filter(Boolean)));
-      
-      if (documentIds.length > 0) {
-        const { data: docs } = await supabase
-          .from('documents')
-          .select('id, title')
-          .in('id', documentIds);
-        
-        const docMap = toTitleMap(docs as any[]);
-        sources = extractCitations(filteredMatches, docMap as Map<string, string>);
-        
-        console.log('[CITATIONS]', { sourcesCount: sources.length });
-      }
-    }
-    
-    // Форматируем ответ с цитатами
-    const formattedReply = formatResponseWithSources(finalAnswer, sources);
 
-    // Сохраняем ответ в семантический кэш (попытка, но не блокируем ответ при ошибке)
+
+// Форматирует лаконичный ответ без ссылок и эмодзи, строго, на языке запроса
+// Удаляет все эмодзи и лишние пробелы (ES5-compatible)
+// Вынесена на верхний уровень для ES5 strict mode
+
+
+// Форматирует лаконичный ответ без ссылок и эмодзи, строго, на языке запроса
+// Удаляет все эмодзи и лишние пробелы (ES5-compatible)
+// Использует arrow function для совместимости с strict mode в модулях
+const cleanReply = function(text: string): string {
+  // Remove emojis (basic unicode range, ES5-compatible)
+  // This covers most common emoji blocks, but not all
+  return text
+    .replace(/[\u2190-\u21FF]|[\u2300-\u23FF]|[\u2600-\u27BF]|[\u1F300-\u1F6FF]/g, '')
+    .replace(/\s{2,}/g, ' ')
+    .replace(/\n{2,}/g, '\n')
+    .trim();
+};
+
+    // Обрезаем слишком длинные ответы, если нужно
+    let conciseAnswer = finalAnswer;
+    if (conciseAnswer.length > 1200) {
+      conciseAnswer = conciseAnswer.substring(0, 1200).trim() + '...';
+    }
+    conciseAnswer = cleanReply(conciseAnswer);
+
+    // Сохраняем ответ в семантический кэш (без источников)
     (async () => {
       try {
         const cacheValue = {
-          reply: formattedReply,
-          sources,
+          reply: conciseAnswer,
+          sources: [],
           intent: intent.action
         };
         const inserted = await insertCachedResponse(primaryEmbedding, cacheValue);
@@ -1068,10 +1145,9 @@ export async function POST(req: NextRequest) {
         console.warn('[RESPONSE-CACHE] Failed to insert cache:', e?.message || e);
       }
     })();
-    
+
     // Сохраняем диалог в базу
     let currentConversationId = conversationId;
-    
     if (!currentConversationId) {
       // Создаем новую conversation
       const { data: newConv } = await supabase
@@ -1082,10 +1158,8 @@ export async function POST(req: NextRequest) {
         })
         .select('id')
         .single();
-      
       currentConversationId = newConv?.id;
     }
-    
     // Сохраняем сообщения
     if (currentConversationId) {
       const { error: msgError } = await supabase.from('messages').insert([
@@ -1098,36 +1172,30 @@ export async function POST(req: NextRequest) {
         {
           conversation_id: currentConversationId,
           role: 'assistant',
-          content: formattedReply,
-          metadata: { sources: formattedReply.includes('━━━━━') ? 'included' : 'none' },
+          content: conciseAnswer,
+          metadata: { sources: 'none' },
           created_at: new Date().toISOString()
         }
       ]);
-      
       if (msgError) {
         console.error('[CONVERSATION] Failed to save messages:', msgError);
       } else {
         console.log('[CONVERSATION] Messages saved successfully');
       }
-      
       // Обновляем updated_at в conversations
       const { error: updateError } = await supabase
         .from('conversations')
         .update({ updated_at: new Date().toISOString() })
         .eq('id', currentConversationId);
-      
       if (updateError) {
         console.error('[CONVERSATION] Failed to update timestamp:', updateError);
       }
-      
       console.log('[CONVERSATION] Saved to DB:', currentConversationId);
     }
-    
+
     // Track metrics
     const totalLatency = Date.now() - startTime;
     const searchLatency = Date.now() - searchStartTime;
-    
-    // ДОПОЛНИТЕЛЬНЫЕ МЕТРИКИ ДЛЯ РЕЦЕПТОВ
     if (intent.action === 'recipes') {
       console.log('[RECIPES METRICS]', {
         query,
@@ -1138,7 +1206,6 @@ export async function POST(req: NextRequest) {
         minSimilarity: MIN_SIMILARITY_RECIPES
       });
     }
-    
     const metrics: QueryMetrics = {
       timestamp: new Date().toISOString(),
       query,
@@ -1153,18 +1220,15 @@ export async function POST(req: NextRequest) {
       llm_latency_ms: totalLatency - searchLatency,
       total_latency_ms: totalLatency,
       context_length: contextText.length,
-      sources_count: sources.length,
+      sources_count: 0,
       model_used: 'gpt-4o-mini',
       tokens_estimated: Math.ceil((contextText.length + query.length) / 4),
       has_answer: !!answer && answer.length > 10
     };
-    
     trackQuery(metrics);
     checkAnomalies(metrics);
-    
     return NextResponse.json({ 
-      reply: formattedReply,
-      sources,
+      reply: conciseAnswer,
       intent: intent.action,
       conversationId: currentConversationId
     });
