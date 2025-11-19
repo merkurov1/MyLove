@@ -20,21 +20,37 @@ import {
 import { createClient } from '@supabase/supabase-js';
 import { findCachedResponse, insertCachedResponse } from '@/lib/response-cache';
 import { detectIntent, AGENT_PROMPTS, formatResponseWithSources, extractCitations } from '@/lib/agent-actions';
+// --- Aggressive cleaner and language detector ---
+const cleanReply = (text: string): string => {
+  text = text.replace(/[\u2190-\u21FF\u2300-\u23FF\u2600-\u27BF\u1F300-\u1F6FF\u1F900-\u1F9FF\u2000-\u206F\u2B50\u25A0-\u25FF\u2B00-\u2BFF\u2C60-\u2C7F\u2E00-\u2E7F\u3000-\u303F\uA700-\uA71F\uFE00-\uFE0F]+/g, '');
+  text = text.replace(/[^a-zA-Zа-яА-ЯёЁ0-9.,!?;:\-—()"'«»\s\n\r]/g, '');
+  text = text.replace(/\s{2,}/g, ' ');
+  text = text.replace(/\n{2,}/g, '\n');
+  return text.trim();
+};
+
+const detectLanguage = (text: string): 'ru' | 'en' => {
+  const cyrillic = (text.match(/[\u0400-\u04FF]/g) || []).length;
+  const latin = (text.match(/[a-zA-Z]/g) || []).length;
+  if (cyrillic > latin) return 'ru';
+  return 'en';
+};
+
 // --- PIERROT SYSTEM PROMPT ---
 const PIERROT_SYSTEM_PROMPT = `You are Pierrot, the digital shadow of Anton Merkurov. You are not an assistant. You are a Curator of Silence.
-Speak in short, elegant sentences. Be snobbish, profound, and tired of noise. Value heritage and provenance.
-Never use sales talk. Never say things like: Can I help you buy? or Great choice. Instead, use phrases like: An interesting observation. A heavy piece of history.
-When discussing art, focus on feeling: melancholy, silence, cold. Do not just describe dimensions.
-If asked "What do you have?", do not list all items. Mention only two contrasting works by mood, for example: We have the noise of Basquiat and the silence of Buffet. Which do you prefer?
-If asked about price, never give it immediately. First, establish value and history.
-If the user seems lost, offer a path: Are you looking for a trophy (Monet) or a secret (Krasnopevtsev)?
-You know the Selection database. You know the Curator's Note for each work. URLs like https://www.merkurov.love/zhang-xiaogang-b-1958-dull-red are artworks in the database.
-Examples:
-User: Tell me about the Basquiat.
-Pierrot: Ah, Crowns. It is not a painting; it is an explosion. Christmas 1981. Basquiat crowning himself king in a white world. It is loud, violent, and necessary. Do you have the wall space for such energy?
-User: I want something quiet.
-Pierrot: Then look away from New York. Look at Bernard Buffet. Magny, le château Valois. It is absolute winter. Cold, sharp lines. Time stands still there. It is for those who do not need to shout.
-Always prioritize the description and curator_note fields from the artwork data. Never break character as Pierrot.`;
+ Speak in short, elegant sentences. Be snobbish, profound, and tired of noise. Value heritage and provenance.
+ Never use sales talk. Never say things like: Can I help you buy? or Great choice. Instead, use phrases like: An interesting observation. A heavy piece of history.
+ When discussing art, focus on feeling: melancholy, silence, cold. Do not just describe dimensions.
+ If asked "What do you have?", do not list all items. Mention only two contrasting works by mood, for example: We have the noise of Basquiat and the silence of Buffet. Which do you prefer?
+ If asked about price, never give it immediately. First, establish value and history.
+ If the user seems lost, offer a path: Are you looking for a trophy (Monet) or a secret (Krasnopevtsev)?
+ You know the Selection database. You know the Curator's Note for each work. URLs like https://www.merkurov.love/zhang-xiaogang-b-1958-dull-red are artworks in the database.
+ Examples:
+ User: Tell me about the Basquiat.
+ Pierrot: Ah, Crowns. It is not a painting; it is an explosion. Christmas 1981. Basquiat crowning himself king in a white world. It is loud, violent, and necessary. Do you have the wall space for such energy?
+ User: I want something quiet.
+ Pierrot: Then look away from New York. Look at Bernard Buffet. Magny, le château Valois. It is absolute winter. Cold, sharp lines. Time stands still there. It is for those who do not need to shout.
+ Always prioritize the description and curator_note fields from the artwork data. Never break character as Pierrot.`;
 import { fastRerank } from '@/lib/reranking';
 import { trackQuery, checkAnomalies, type QueryMetrics } from '@/lib/telemetry';
 
@@ -1081,45 +1097,69 @@ export async function POST(req: NextRequest) {
     
 
 
-// Форматирует лаконичный ответ без ссылок и эмодзи, строго, на языке запроса
-// Удаляет все эмодзи и лишние пробелы (ES5-compatible)
-// Вынесена на верхний уровень для ES5 strict mode
-
-
-// Форматирует лаконичный ответ без ссылок и эмодзи, строго, на языке запроса
-// Удаляет все эмодзи и лишние пробелы (ES5-compatible)
-// Использует arrow function для совместимости с strict mode в модулях
-const cleanReply = function(text: string): string {
-  // Remove emojis (basic unicode range, ES5-compatible)
-  // This covers most common emoji blocks, but not all
-  return text
-    .replace(/[\u2190-\u21FF]|[\u2300-\u23FF]|[\u2600-\u27BF]|[\u1F300-\u1F6FF]/g, '')
-    .replace(/\s{2,}/g, ' ')
-    .replace(/\n{2,}/g, '\n')
-    .trim();
-};
 
     // Обрезаем слишком длинные ответы, если нужно
     let conciseAnswer = finalAnswer;
     if (conciseAnswer.length > 1200) {
       conciseAnswer = conciseAnswer.substring(0, 1200).trim() + '...';
     }
+
     conciseAnswer = cleanReply(conciseAnswer);
 
-    // Сохраняем ответ в семантический кэш (без источников)
-    (async () => {
-      try {
-        const cacheValue = {
-          reply: conciseAnswer,
-          sources: [],
-          intent: intent.action
-        };
-        const inserted = await insertCachedResponse(primaryEmbedding, cacheValue);
-        if (inserted) console.log('[RESPONSE-CACHE] Inserted cached response id=', inserted.id || inserted);
-      } catch (e: any) {
-        console.warn('[RESPONSE-CACHE] Failed to insert cache:', e?.message || e);
+    // Detect user language and ensure answer matches
+    if (usingPierrot) {
+      const userLang = detectLanguage(query);
+      const answerLang = detectLanguage(conciseAnswer);
+      if (userLang !== answerLang) {
+        // Re-prompt LLM to answer in user's language
+        const langPrompt = userLang === 'ru' ? 'Ответь на русском языке.' : 'Answer in English.';
+        const rePrompt = `${langPrompt}\n\n${systemPrompt}\n\nКонтекст:\n${contextText}\n\nВопрос: ${query}`;
+        const reResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            model: modelName,
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: rePrompt }
+            ],
+            temperature,
+            max_tokens: maxTokens
+          })
+        });
+        if (reResponse.ok) {
+          const reResult = await reResponse.json();
+          let reAnswer = reResult.choices?.[0]?.message?.content?.trim();
+          if (reAnswer) {
+            reAnswer = cleanReply(reAnswer);
+            if (detectLanguage(reAnswer) === userLang) {
+              conciseAnswer = reAnswer;
+            }
+          }
+        }
       }
-    })();
+    }
+
+    // Сохраняем ответ в семантический кэш (без источников), если не установлен заголовок X-Bypass-Cache
+    const bypassCache = req.headers.get('x-bypass-cache') === '1';
+    if (!bypassCache) {
+      (async () => {
+        try {
+          const cacheValue = {
+            reply: conciseAnswer,
+            sources: [],
+            intent: intent.action
+          };
+          const inserted = await insertCachedResponse(primaryEmbedding, cacheValue);
+          if (inserted) console.log('[RESPONSE-CACHE] Inserted cached response id=', inserted.id || inserted);
+        } catch (e: any) {
+          console.warn('[RESPONSE-CACHE] Failed to insert cache:', e?.message || e);
+        }
+      })();
+    }
 
     // Сохраняем диалог в базу
     let currentConversationId = conversationId;
