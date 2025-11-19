@@ -261,7 +261,6 @@ export async function POST(req: NextRequest) {
 
     // 2. Query expansion для улучшения поиска
     let expandedQuery = query;
-    const lowerQuery = query.toLowerCase();
 
     // Специальная логика для кулинарных запросов в multi-query
     if (enableMultiQuery && (lowerQuery.includes('рецепт') || lowerQuery.includes('еда') || lowerQuery.includes('блюд'))) {
