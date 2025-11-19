@@ -136,7 +136,7 @@ export async function POST(req: NextRequest) {
     
       // Validate text before chunking/embedding
       if (!text || typeof text !== 'string' || text.trim().length === 0) {
-        console.error('[ingest] Invalid text for chunking:', { textType: typeof text, textLength: text?.length, fileName, fileType });
+        console.error('[ingest] Invalid text for chunking:', { textType: typeof text, textLength: text?.length, name });
         // Clean up: delete the created document if present
         if (documentId) {
         try {
