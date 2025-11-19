@@ -137,15 +137,6 @@ export async function POST(req: NextRequest) {
       // Validate text before chunking/embedding
       if (!text || typeof text !== 'string' || text.trim().length === 0) {
         console.error('[ingest] Invalid text for chunking:', { textType: typeof text, textLength: text?.length, name });
-        // Clean up: delete the created document if present
-        if (typeof doc !== 'undefined' && doc?.id) {
-          try {
-            await supabase.from('documents').delete().eq('id', doc.id);
-            console.log('[ingest] Deleted orphaned document due to invalid text:', doc.id);
-          } catch (cleanupErr) {
-            console.error('[ingest] Failed to delete orphaned document:', cleanupErr);
-          }
-        }
         return NextResponse.json({ error: 'Invalid text for chunking' }, { status: 400 });
       }
       stepLog('DOCX detected');
