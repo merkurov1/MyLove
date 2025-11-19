@@ -32,16 +32,19 @@ function isCmdAvailable(cmd: string) {
 }
 
 export async function POST(req: NextRequest) {
+  const stepLog = (msg: string, data?: any) => console.log(`[ingest] ${msg}`, data || '');
   try {
     const form = await req.formData()
     const file = form.get('file') as File | null
     const sourceId = (form.get('sourceId') as string) || process.env.DEFAULT_SOURCE_ID || null
+    stepLog('Received upload', { fileName: file?.name, fileSize: file?.size, sourceId });
 
     if (!file) return NextResponse.json({ error: 'file is required' }, { status: 400 })
 
     // Проверяем размер файла
     const maxSize = 4.5 * 1024 * 1024; // 4.5MB
     if (file.size > maxSize) {
+      stepLog('File too large', { size: file.size });
       return NextResponse.json({ 
         error: `file_too_large`, 
         details: `File size ${(file.size / 1024 / 1024).toFixed(1)}MB exceeds limit of 4.5MB` 
@@ -51,8 +54,10 @@ export async function POST(req: NextRequest) {
     const buf = Buffer.from(await file.arrayBuffer())
     const name = (file.name || 'upload').toLowerCase()
     let text = ''
+    stepLog('File buffer loaded', { name, size: buf.length });
 
     if (name.endsWith('.pdf')) {
+      stepLog('PDF detected');
       // 1) pdf-parse (if installed)
       try {
         const pdfParse = tryRequire('pdf-parse')
@@ -128,6 +133,22 @@ export async function POST(req: NextRequest) {
       }
 
     } else if (name.endsWith('.docx')) {
+    
+      // Validate text before chunking/embedding
+      if (!text || typeof text !== 'string' || text.trim().length === 0) {
+        console.error('[ingest] Invalid text for chunking:', { textType: typeof text, textLength: text?.length, fileName, fileType });
+        // Clean up: delete the created document if present
+        if (documentId) {
+        try {
+          await supabase.from('documents').delete().eq('id', documentId);
+          console.log('[ingest] Deleted orphaned document due to invalid text:', documentId);
+        } catch (cleanupErr) {
+          console.error('[ingest] Failed to delete orphaned document:', cleanupErr);
+        }
+        }
+        return NextResponse.json({ error: 'Invalid text for chunking' }, { status: 400 });
+      }
+      stepLog('DOCX detected');
       try {
         const mammoth = tryRequire('mammoth')
         if (mammoth) {
@@ -139,34 +160,63 @@ export async function POST(req: NextRequest) {
       }
     } else {
       text = buf.toString('utf-8')
+      stepLog('Plain/text file detected');
     }
 
     text = (text || '').replace(/\u0000/g, '').replace(/[\uFFFE\uFFFF]/g, '').trim()
+    stepLog('Text extracted', { length: text.length });
     if (!text) return NextResponse.json({ error: 'empty_or_unreadable' }, { status: 400 })
 
     // 1. Вставляем документ и получаем doc.id
     const { data: doc, error: docError } = await supabase.from('documents').insert({ title: file.name, description: `Uploaded file: ${file.name}`, source_url: null, source_id: sourceId || process.env.DEFAULT_SOURCE_ID }).select().single()
-    if (docError || !doc) return NextResponse.json({ error: 'document_create_failed', supabaseError: docError }, { status: 500 })
+    if (docError || !doc) {
+      stepLog('Document create failed', docError);
+      return NextResponse.json({ error: 'document_create_failed', supabaseError: docError }, { status: 500 })
+    }
+    stepLog('Document created', { id: doc.id });
 
     // 2. Удаляем старые чанки для doc.id (idempotency)
     await supabase.from('document_chunks').delete().eq('document_id', doc.id)
+    stepLog('Old chunks deleted (idempotency)', { docId: doc.id });
 
     // 3. Чанкаем текст
     let chunks: any[] = []
     try {
+      stepLog('Chunking started');
       chunks = await adaptiveChunkText(text)
+      stepLog('Chunking finished', { count: chunks.length });
     } catch (e) {
+      stepLog('Chunking failed', e);
+      // cleanup: remove doc
+      await supabase.from('documents').delete().eq('id', doc.id);
       return NextResponse.json({ error: 'chunking_failed', details: String(e) }, { status: 400 })
     }
-    if (!chunks || !chunks.length) return NextResponse.json({ error: 'chunking_failed' }, { status: 400 })
+    if (!chunks || !chunks.length) {
+      stepLog('No chunks produced, cleanup doc', { docId: doc.id });
+      await supabase.from('documents').delete().eq('id', doc.id);
+      return NextResponse.json({ error: 'chunking_failed' }, { status: 400 })
+    }
 
     // 4. Получаем эмбеддинги для каждого чанка (batch, p-limit)
+    stepLog('Embedding started', { chunkCount: chunks.length });
     const pLimit = (await import('p-limit')).default || ((n: number) => (fn: any) => fn());
     const limit = pLimit(4);
-    const embeddings = await Promise.all(
-      chunks.map((c) => limit(() => getEmbedding(c.text)))
-    );
-    if (!embeddings || embeddings.length !== chunks.length) return NextResponse.json({ error: 'embeddings_mismatch' }, { status: 500 })
+    let embeddings: any[] = [];
+    try {
+      embeddings = await Promise.all(
+        chunks.map((c) => limit(() => getEmbedding(c.text)))
+      );
+      stepLog('Embedding finished', { embeddings: embeddings.length });
+    } catch (e) {
+      stepLog('Embedding failed', e);
+      await supabase.from('documents').delete().eq('id', doc.id);
+      return NextResponse.json({ error: 'embeddings_failed', details: String(e) }, { status: 500 })
+    }
+    if (!embeddings || embeddings.length !== chunks.length) {
+      stepLog('Embeddings mismatch, cleanup doc', { docId: doc.id });
+      await supabase.from('documents').delete().eq('id', doc.id);
+      return NextResponse.json({ error: 'embeddings_mismatch' }, { status: 500 })
+    }
 
     // 5. Формируем строки для вставки
     const clean = (s: string) => s.replace(/\u0000/g, '').replace(/[\uFFFE\uFFFF]/g, '').replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '').trim()
@@ -190,11 +240,21 @@ export async function POST(req: NextRequest) {
       }
     }).filter((r): r is NonNullable<typeof r> => r !== null)
 
-    if (!rows.length) return NextResponse.json({ error: 'all_chunks_empty' }, { status: 400 })
+    if (!rows.length) {
+      stepLog('All chunks empty after cleaning, cleanup doc', { docId: doc.id });
+      await supabase.from('documents').delete().eq('id', doc.id);
+      return NextResponse.json({ error: 'all_chunks_empty' }, { status: 400 })
+    }
 
     // 6. Вставляем чанки
+    stepLog('Inserting chunks', { count: rows.length });
     const { error: insertErr } = await supabase.from('document_chunks').insert(rows)
-    if (insertErr) return NextResponse.json({ error: 'chunk_insert_failed', supabaseError: insertErr }, { status: 500 })
+    if (insertErr) {
+      stepLog('Chunk insert failed, cleanup doc', insertErr);
+      await supabase.from('documents').delete().eq('id', doc.id);
+      return NextResponse.json({ error: 'chunk_insert_failed', supabaseError: insertErr }, { status: 500 })
+    }
+    stepLog('Chunks inserted successfully', { docId: doc.id, count: rows.length });
 
     return NextResponse.json({ success: true, document_id: doc.id, totalChunks: rows.length })
   } catch (e: any) {
