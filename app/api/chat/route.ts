@@ -165,13 +165,13 @@ export async function POST(req: NextRequest) {
     
     const greetingsEn = ['hello', 'hi', 'hey', 'good morning', 'good afternoon', 'good evening'];
     const greetingsRu = ['привет', 'здравствуй', 'здравствуйте', 'добрый день', 'доброе утро', 'добрый вечер'];
-    const smallTalkEn = ['how are you', 'how are you doing', 'what\'s up', 'whats up', 'wassup'];
+    const smallTalkEn = ['how are you', 'how are you doing', "what's up", 'whats up', 'wassup'];
     const smallTalkRu = ['как дела', 'как ты', 'как поживаешь', 'что нового', 'чё как'];
     
-    const isGreeting = greetingsEn.some(g => lowerQuery === g || lowerQuery.startsWith(g + ' ')) ||
-                      greetingsRu.some(g => lowerQuery === g || lowerQuery.startsWith(g + ' '));
-    const isSmallTalk = smallTalkEn.some(s => lowerQuery.includes(s)) ||
-                       smallTalkRu.some(s => lowerQuery.includes(s));
+    const isGreeting = greetingsEn.some((g) => lowerQuery === g || lowerQuery.startsWith(g + ' ')) ||
+                      greetingsRu.some((g) => lowerQuery === g || lowerQuery.startsWith(g + ' '));
+    const isSmallTalk = smallTalkEn.some((s) => lowerQuery.includes(s)) ||
+                       smallTalkRu.some((s) => lowerQuery.includes(s));
     
     if (isGreeting || isSmallTalk) {
       console.log('[GREETING] Basic greeting detected, responding without RAG');
