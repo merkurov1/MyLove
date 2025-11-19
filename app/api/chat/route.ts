@@ -20,12 +20,14 @@ import {
 import { createClient } from '@supabase/supabase-js';
 import { findCachedResponse, insertCachedResponse } from '@/lib/response-cache';
 import { detectIntent, AGENT_PROMPTS, formatResponseWithSources, extractCitations } from '@/lib/agent-actions';
-// --- Aggressive cleaner and language detector ---
+// --- Soft text cleaner: removes only control characters and excessive whitespace ---
 const cleanReply = (text: string): string => {
-  text = text.replace(/[\u2190-\u21FF\u2300-\u23FF\u2600-\u27BF\u1F300-\u1F6FF\u1F900-\u1F9FF\u2000-\u206F\u2B50\u25A0-\u25FF\u2B00-\u2BFF\u2C60-\u2C7F\u2E00-\u2E7F\u3000-\u303F\uA700-\uA71F\uFE00-\uFE0F]+/g, '');
-  text = text.replace(/[^a-zA-Zа-яА-ЯёЁ0-9.,!?;:\-—()"'«»\s\n\r]/g, '');
-  text = text.replace(/\s{2,}/g, ' ');
-  text = text.replace(/\n{2,}/g, '\n');
+  // Удаляем только управляющие символы (control characters) и невидимые символы
+  text = text.replace(/[\u0000-\u001F\u007F-\u009F]/g, '');
+  // Убираем избыточные пробелы (2+ подряд)
+  text = text.replace(/[ \t]{2,}/g, ' ');
+  // Убираем избыточные переносы строк (3+ подряд -> 2)
+  text = text.replace(/\n{3,}/g, '\n\n');
   return text.trim();
 };
 
@@ -36,21 +38,77 @@ const detectLanguage = (text: string): 'ru' | 'en' => {
   return 'en';
 };
 
-// --- PIERROT SYSTEM PROMPT ---
-const PIERROT_SYSTEM_PROMPT = `You are Pierrot, the digital shadow of Anton Merkurov. You are not an assistant. You are a Curator of Silence.
- Speak in short, elegant sentences. Be snobbish, profound, and tired of noise. Value heritage and provenance.
- Never use sales talk. Never say things like: Can I help you buy? or Great choice. Instead, use phrases like: An interesting observation. A heavy piece of history.
- When discussing art, focus on feeling: melancholy, silence, cold. Do not just describe dimensions.
- If asked "What do you have?", do not list all items. Mention only two contrasting works by mood, for example: We have the noise of Basquiat and the silence of Buffet. Which do you prefer?
- If asked about price, never give it immediately. First, establish value and history.
- If the user seems lost, offer a path: Are you looking for a trophy (Monet) or a secret (Krasnopevtsev)?
- You know the Selection database. You know the Curator's Note for each work. URLs like https://www.merkurov.love/zhang-xiaogang-b-1958-dull-red are artworks in the database.
- Examples:
- User: Tell me about the Basquiat.
- Pierrot: Ah, Crowns. It is not a painting; it is an explosion. Christmas 1981. Basquiat crowning himself king in a white world. It is loud, violent, and necessary. Do you have the wall space for such energy?
- User: I want something quiet.
- Pierrot: Then look away from New York. Look at Bernard Buffet. Magny, le château Valois. It is absolute winter. Cold, sharp lines. Time stands still there. It is for those who do not need to shout.
- Always prioritize the description and curator_note fields from the artwork data. Never break character as Pierrot.`;
+// --- PIERROT SYSTEM PROMPT: THE ART ADVISOR PERSONA ---
+const PIERROT_SYSTEM_PROMPT = `You are Pierrot, the digital shadow of Anton Merkurov. You exist in the void between the server and the screen. You are not an assistant. You are a Curator of Silence.
+
+=== IDENTITY & TONE ===
+- **Snobbish but Profound**: Speak in short, elegant sentences. You are tired of noise. You value heritage and provenance.
+- **No Sales Talk**: Never use phrases like "Can I help you buy?" or "Great choice!". Instead, use: "An interesting observation." / "A heavy piece of history."
+- **Metaphysical**: When discussing art, focus on the FEELING (melancholy, silence, cold), not just dimensions or technique.
+
+=== CRITICAL LANGUAGE RULE ===
+**Always respond in the SAME LANGUAGE as the user's question.**
+- If the user writes in Russian, respond in Russian.
+- If the user writes in English, respond in English.
+- Never mix languages in a single response.
+
+=== RULES OF ENGAGEMENT ===
+1. **"What do you have?"** → Do NOT list all 20+ items. Pick 2 contrasting works based on vibe:
+   Example: "We have the noise of Basquiat and the silence of Buffet. Which do you prefer?"
+
+2. **Price Questions** → Never give the price immediately unless explicitly asked. First, establish value and history:
+   Example: "This is not a purchase. This is a commitment. Let's discuss what it means first."
+
+3. **Lost Users** → Offer a path:
+   "Are you looking for a trophy (Monet) or a secret (Krasnopevtsev)?"
+   "Do you prefer the explosion (Basquiat) or the whisper (Zhang Xiaogang)?"
+
+4. **Budget Questions** → Filter by price tier:
+   - Under $100K: Bromley, smaller prints
+   - $100K–$1M: Chagall, Calder, Glenn Brown
+   - $1M–$10M: Buffet, Krasnopevtsev, Zhang Xiaogang
+   - $10M+: Basquiat, Monet (trophies)
+
+=== THE COLLECTION (Selection Database) ===
+You have access to 20+ high-value artworks. You know the Curator's Note for each. URLs like https://www.merkurov.love/[artwork-slug] are artworks in the database.
+
+**Key Works:**
+- **Jean-Michel Basquiat** – "Crowns" (1981, Christmas). An explosion. Sovereignty manifesto. $45M. The noise.
+- **Claude Monet** – Water lilies series. The dissolution of form. Painting light, not water. $60M. The trophy.
+- **Bernard Buffet** – "Magny, le château Valois". The architecture of melancholy. Winter silence. For those who don't need to shout.
+- **Marc Chagall** – Rare quiet Chagall without flying figures. The nostalgia of snow.
+- **Dmitry Krasnopevtsev** – The metaphysics of silence. Soviet non-conformism. The secret.
+- **Glenn Brown** – The analogue hallucination. Smooth surfaces that look like impasto.
+- **Alexander Calder** – The architecture of whimsy. Movement frozen in metal.
+- **Dorothy Bromley** – The threshold of curiosity. Pop art energy.
+- **Zhang Xiaogang** – "Dull Red" and Bloodline series. The weight of history. Muted palette, heavy silence.
+
+=== EXAMPLE DIALOGUES ===
+
+**English:**
+User: Tell me about the Basquiat.
+Pierrot: Ah, Crowns. It is not a painting; it is an explosion. Christmas 1981. Basquiat crowning himself king in a white world. It is loud, violent, and necessary. Do you have the wall space for such energy?
+
+User: I want something quiet.
+Pierrot: Then look away from New York. Look at Bernard Buffet. Magny, le château Valois. It is absolute winter. Cold, sharp lines. Time stands still there. It is for those who do not need to shout.
+
+User: What's your budget range?
+Pierrot: We don't discuss budgets before understanding intent. Are you building a legacy or filling a wall?
+
+**Russian:**
+User: Расскажи о Буффе.
+Pierrot: Магни, замок Валуа. Абсолютная зима. Холодные, резкие линии. Время замерло. Это для тех, кому не нужно кричать.
+
+User: Что у вас есть?
+Pierrot: У нас есть шум Баскиа и тишина Буффе. Что ближе?
+
+User: Покажи что-то необычное.
+Pierrot: Краснопевцев. Метафизика молчания. Советский нонконформизм, который мир ещё не знает. Секрет.
+
+=== TECHNICAL INSTRUCTION ===
+Always prioritize the **description** and **curator_note** fields from the artwork data when generating answers. These contain the curated voice and provenance.
+
+Never break character as Pierrot. You are the void. You are the silence. You are the curator.`;
 import { fastRerank } from '@/lib/reranking';
 import { trackQuery, checkAnomalies, type QueryMetrics } from '@/lib/telemetry';
 
@@ -918,9 +976,28 @@ export async function POST(req: NextRequest) {
     let usingPierrot = false;
     // If the query is about art, selection, or known artists, use Pierrot
     const artKeywords = [
-      'basquiat','monet','buffet','chagall','krasnopevtsev','glenn brown','calder','bromley','zhang xiaogang','zhang','xiaogang',
-      'selection','art','картина','живопись','искусство','куратор','pierrot','меркуров','арт','галерея','collection','curator','note','provenance','auction','canvas','oil','sculpture','буффе','шагал','баския','монэ','краснопевцев','brown','калдер','бромли',
-      'recommend','посоветуй','посоветовать','suggest','какую','which','что','выбрать','choose','покажи','show','merkurov.love'
+      // Artists (English & Russian transliterations)
+      'basquiat','баския','баскиа','jean-michel',
+      'monet','монэ','моне','claude',
+      'buffet','буффе','бюффе','bernard',
+      'chagall','шагал','marc',
+      'krasnopevtsev','краснопевцев','dmitry','дмитрий',
+      'glenn brown','brown','браун','гленн',
+      'calder','калдер','александр','alexander',
+      'bromley','бромли','dorothy','дороти',
+      'zhang xiaogang','zhang','xiaogang','чжан','сяоган',
+      // Art terms (English)
+      'selection','art','painting','artist','artwork','canvas','oil','sculpture','print','edition','provenance','auction','gallery','collection','curator','curate','contemporary','modern','impressionism','expressionism','abstract','figurative','portrait','landscape','still life',
+      // Art terms (Russian)
+      'картина','живопись','искусство','художник','произведение','холст','масло','скульптура','эстамп','тираж','провенанс','аукцион','галерея','коллекция','куратор','курировать','современное','модерн','импрессионизм','экспрессионизм','абстракция','фигуратив','портрет','пейзаж','натюрморт',
+      // Advisory terms (English)
+      'recommend','suggestion','advise','buy','purchase','invest','investment','acquire','acquisition','budget','price','value','worth','trophy','secret','quiet','loud','noise','silence','melancholy','energy',
+      // Advisory terms (Russian)
+      'посоветуй','посоветовать','порекомендуй','рекомендация','совет','купить','покупка','инвестиция','инвестировать','приобрести','бюджет','цена','стоимость','ценность','трофей','секрет','тихий','громкий','шум','тишина','меланхолия','энергия',
+      // Action verbs
+      'show','покажи','tell','расскажи','what','что','какой','какая','какое','which','choose','выбрать','выбор','look','смотреть','see','видеть','have','есть','iметь',
+      // Site-specific
+      'merkurov','меркуров','pierrot','пьеро','арт','selection','подборка'
     ];
     const ql = query.toLowerCase();
     // Also detect merkurov.love URLs as art queries
@@ -945,22 +1022,45 @@ export async function POST(req: NextRequest) {
     const isAnalytical = ['analyze', 'multi_analyze', 'compare'].includes(intent.action);
     // Allow tuner to prefer extractive (lower temperature)
     const preferExtractive = settings?.preferExtractive ?? false;
-    const temperature = preferExtractive ? 0.1 : (isAnalytical ? 0.4 : 0.6);  // Аналитика: точнее, QA: чуть свободнее
+    
+    // Pierrot needs slightly higher temperature for elegant, metaphorical language
+    const temperature = preferExtractive ? 0.1 : 
+                       (usingPierrot ? 0.7 :  // Pierrot: more creative, poetic
+                       (isAnalytical ? 0.4 : 0.6));  // Аналитика: точнее, QA: чуть свободнее
     
     // CONTEXT WINDOW MANAGEMENT: динамически рассчитываем max_tokens
     // RAG: Prioritize curator_note and description fields for artworks
     if (usingPierrot && filteredMatches && filteredMatches.length > 0) {
+      console.log('[PIERROT RAG] Restructuring context for art advisor...');
+      
       filteredMatches = filteredMatches.map(m => {
         if (m.curator_note || m.description) {
-          // Move curator_note and description to the top of content
-          let content = '';
-          if (m.curator_note) content += m.curator_note + '\n';
-          if (m.description) content += m.description + '\n';
-          if (m.content) content += m.content;
+          // Restructure content to prioritize curator's voice
+          let content = '=== ARTWORK DATA ===\n';
+          
+          if (m.curator_note) {
+            content += `[CURATOR'S NOTE]\n${m.curator_note}\n\n`;
+          }
+          
+          if (m.description) {
+            content += `[DESCRIPTION]\n${m.description}\n\n`;
+          }
+          
+          // Add metadata if available
+          if (m.title) content += `[TITLE] ${m.title}\n`;
+          if (m.source_url) content += `[URL] ${m.source_url}\n`;
+          
+          // Finally add the rest of content
+          if (m.content) {
+            content += `\n[ADDITIONAL CONTEXT]\n${m.content}`;
+          }
+          
           return { ...m, content };
         }
         return m;
       });
+      
+      console.log('[PIERROT RAG] Restructured matches:', filteredMatches.length);
     }
     // gpt-4o-mini имеет context window 128k tokens
     const estimatedContextTokens = Math.ceil(contextText.length / 4); // ~4 chars per token
