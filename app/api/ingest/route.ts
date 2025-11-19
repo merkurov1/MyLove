@@ -191,10 +191,11 @@ export async function POST(req: NextRequest) {
     // 3.1. Усиленная валидация чанков: только валидные строки, подробный лог
     const MIN_CHUNK_LENGTH = 10;
     const validChunks = chunks.filter((c, i) => {
-      const t = typeof c.text === 'string' ? c.text.replace(/\u0000/g, '').replace(/[\uFFFE\uFFFF]/g, '').trim() : '';
+      // Используем c.content вместо c.text для adaptiveChunkText
+      const t = typeof c.content === 'string' ? c.content.replace(/\u0000/g, '').replace(/[\uFFFE\uFFFF]/g, '').trim() : '';
       const isValid = t && t.length >= MIN_CHUNK_LENGTH;
       if (!isValid) {
-        stepLog('SKIP: invalid chunk', { index: i, type: typeof c.text, length: t.length, preview: t.substring(0, 40) });
+        stepLog('SKIP: invalid chunk', { index: i, type: typeof c.content, length: t.length, preview: t.substring(0, 40) });
       }
       return isValid;
     });
@@ -212,7 +213,7 @@ export async function POST(req: NextRequest) {
     try {
       embeddings = await Promise.all(
         validChunks.map((c, i) => limit(async () => {
-          const t = typeof c.text === 'string' ? c.text.replace(/\u0000/g, '').replace(/[\uFFFE\uFFFF]/g, '').trim() : '';
+          const t = typeof c.content === 'string' ? c.content.replace(/\u0000/g, '').replace(/[\uFFFE\uFFFF]/g, '').trim() : '';
           stepLog('Embedding chunk', { index: i, length: t.length, preview: t.substring(0, 40) });
           return getEmbedding(t);
         }))
@@ -232,7 +233,7 @@ export async function POST(req: NextRequest) {
     // 5. Формируем строки для вставки
     const clean = (s: string) => s.replace(/\u0000/g, '').replace(/[\uFFFE\uFFFF]/g, '').replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '').trim()
     const rows = validChunks.map((c: any, i: number) => {
-      const cleaned = clean(c.text)
+      const cleaned = clean(c.content)
       return {
         document_id: doc.id,
         chunk_index: i,
