@@ -5,6 +5,9 @@ import { getEmbedding } from '@/lib/embedding-ai';
 export const runtime = 'nodejs';
 
 // --- CONFIG ---
+// Меняем на latest версию, она стабильнее находится
+const MODEL_NAME = 'gemini-1.5-flash-latest'; 
+
 const PIERROT_SYSTEM_INSTRUCTION = `
 You are Pierrot, the digital shadow of Anton Merkurov.
 You are NOT a helpful assistant. You are an observer of the digital void and a private Art Advisor.
@@ -25,21 +28,19 @@ export async function POST(req: NextRequest) {
   console.log('[API] Chat request started');
 
   try {
-    // 1. Check API Key
     const apiKey = process.env.GOOGLE_API_KEY;
     if (!apiKey) {
       console.error("❌ Missing GOOGLE_API_KEY");
       return NextResponse.json({ error: 'Server Error: API Key missing' }, { status: 500 });
     }
 
-    // 2. Parse Input
     const body = await req.json();
     const query = body.query;
     const conversationId = body.conversationId;
 
     if (!query) return NextResponse.json({ error: 'No query provided' }, { status: 400 });
 
-    // 3. RAG / Context Retrieval (Supabase)
+    // --- RAG LOGIC (SUPABASE) ---
     let contextText = "";
     try {
         const supabase = createClient(
@@ -50,7 +51,7 @@ export async function POST(req: NextRequest) {
         const embedding = await getEmbedding(query);
         const { data: matches } = await supabase.rpc('match_documents', {
             query_embedding: embedding,
-            match_count: 8, // Берем 8 лучших кусков
+            match_count: 8, 
         });
 
         if (matches && matches.length > 0) {
@@ -60,10 +61,10 @@ export async function POST(req: NextRequest) {
             }).join("\n\n---\n\n");
         }
     } catch (e) {
-        console.warn("⚠️ RAG skipped (DB error or no embedding)", e);
+        console.warn("⚠️ RAG skipped", e);
     }
 
-    // 4. Prepare Payload for Google API (REST format)
+    // --- GOOGLE API REQUEST ---
     const userMessage = `
     CONTEXT FROM DATABASE:
     ${contextText || "No database context available."}
@@ -90,35 +91,32 @@ export async function POST(req: NextRequest) {
       }
     };
 
-    // 5. Direct Fetch to Gemini 1.5 Flash
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+    // Используем v1beta и конкретную модель
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateContent?key=${apiKey}`;
     
     const response = await fetch(url, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
     });
 
     if (!response.ok) {
+      // Читаем тело ошибки, чтобы понять причину
       const errorText = await response.text();
-      console.error('[GOOGLE API ERROR]', errorText);
-      return NextResponse.json({ error: `Google API Error: ${response.status} ${response.statusText}` }, { status: 500 });
+      console.error(`[GOOGLE API ERROR] Status: ${response.status}. Details:`, errorText);
+      return NextResponse.json({ error: `AI Error: ${response.status} - Check Logs` }, { status: 500 });
     }
 
     const data = await response.json();
-    
-    // Extract text from Google's response structure
-    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || "The void is silent today. (Error parsing response)";
+    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || "The void is silent. (No text generated)";
 
-    // 6. Save to DB (Fixed Types)
+    // Save to DB (Fire & Forget)
     if (conversationId) {
         const supabase = createClient(
           process.env.NEXT_PUBLIC_SUPABASE_URL!,
           process.env.SUPABASE_SERVICE_ROLE_KEY!
         );
-        // Исправлена ошибка типов: добавлено : any
+        // Исправленный тип для error
         supabase.from('messages').insert([
             { conversation_id: conversationId, role: 'user', content: query },
             { conversation_id: conversationId, role: 'assistant', content: text }
