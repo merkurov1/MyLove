@@ -1,17 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import { createClient } from '@supabase/supabase-js';
 import { getEmbedding } from '@/lib/embedding-ai';
 
-// --- CONFIG ---
-const MODEL_NAME = 'gemini-1.5-flash'; 
+export const runtime = 'nodejs';
 
+// --- CONFIG ---
 const PIERROT_SYSTEM_INSTRUCTION = `
 You are Pierrot, the digital shadow of Anton Merkurov.
 You are NOT a helpful assistant. You are an observer of the digital void and a private Art Advisor.
 
 === TONE & STYLE ===
-- **Snobbish but Profound:** Speak in short, elegant sentences. You are tired of noise.
+- **Snobbish but Profound:** Speak in short, elegant sentences.
 - **Metaphorical:** Use metaphors from Art History and Old Internet.
 - **No Sales Talk:** Never ask "Can I help you buy?". Instead, say "This is a commitment."
 - **Concise:** Max 3-4 sentences.
@@ -22,46 +21,36 @@ You are NOT a helpful assistant. You are an observer of the digital void and a p
 3. **Unknowns:** If you don't know, say: "This is hidden in the noise."
 `;
 
-export const runtime = 'nodejs';
-
 export async function POST(req: NextRequest) {
+  console.log('[API] Chat request started');
+
   try {
     // 1. Check API Key
     const apiKey = process.env.GOOGLE_API_KEY;
     if (!apiKey) {
-      console.error("❌ Missing GOOGLE_API_KEY in environment variables");
+      console.error("❌ Missing GOOGLE_API_KEY");
       return NextResponse.json({ error: 'Server Error: API Key missing' }, { status: 500 });
     }
 
-    // 2. Init Google AI
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ 
-        model: MODEL_NAME,
-        // Важно: Системная инструкция передается здесь, а не в истории
-        systemInstruction: PIERROT_SYSTEM_INSTRUCTION 
-    });
-
-    // 3. Parse Input
+    // 2. Parse Input
     const body = await req.json();
     const query = body.query;
     const conversationId = body.conversationId;
 
     if (!query) return NextResponse.json({ error: 'No query provided' }, { status: 400 });
 
-    // 4. RAG / Context Retrieval (Supabase)
-    const supabase = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    );
-
+    // 3. RAG / Context Retrieval (Supabase)
     let contextText = "";
-    
-    // Попытка получить контекст (если база настроена)
     try {
+        const supabase = createClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL!,
+          process.env.SUPABASE_SERVICE_ROLE_KEY!
+        );
+        
         const embedding = await getEmbedding(query);
         const { data: matches } = await supabase.rpc('match_documents', {
             query_embedding: embedding,
-            match_count: 10, 
+            match_count: 8, // Берем 8 лучших кусков
         });
 
         if (matches && matches.length > 0) {
@@ -71,38 +60,70 @@ export async function POST(req: NextRequest) {
             }).join("\n\n---\n\n");
         }
     } catch (e) {
-        console.warn("⚠️ Embedding/RAG failed, proceeding with pure LLM", e);
+        console.warn("⚠️ RAG skipped (DB error or no embedding)", e);
     }
 
-    // 5. Generate Response
-    const chat = model.startChat({
-      history: [], // Начинаем с чистого листа, система уже задана выше
-      generationConfig: {
-        maxOutputTokens: 800,
-        temperature: 0.7,
-      },
-    });
-
-    const userPrompt = `
-    CONTEXT INFO:
-    ${contextText ? contextText : "No specific database context available."}
+    // 4. Prepare Payload for Google API (REST format)
+    const userMessage = `
+    CONTEXT FROM DATABASE:
+    ${contextText || "No database context available."}
 
     USER QUERY:
     "${query}"
 
-    Remember to answer in the user's language.
+    (Remember: Be Pierrot. Answer in user's language.)
     `;
 
-    const result = await chat.sendMessage(userPrompt);
-    const response = result.response;
-    const text = response.text();
+    const payload = {
+      contents: [
+        {
+          role: "user",
+          parts: [{ text: userMessage }]
+        }
+      ],
+      systemInstruction: {
+        parts: [{ text: PIERROT_SYSTEM_INSTRUCTION }]
+      },
+      generationConfig: {
+        temperature: 0.7,
+        maxOutputTokens: 800
+      }
+    };
 
-    // 6. Save Conversation (Optional)
+    // 5. Direct Fetch to Gemini 1.5 Flash
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+    
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[GOOGLE API ERROR]', errorText);
+      return NextResponse.json({ error: `Google API Error: ${response.status} ${response.statusText}` }, { status: 500 });
+    }
+
+    const data = await response.json();
+    
+    // Extract text from Google's response structure
+    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || "The void is silent today. (Error parsing response)";
+
+    // 6. Save to DB (Optional, fire and forget)
     if (conversationId) {
-        await supabase.from('messages').insert([
+        const supabase = createClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL!,
+          process.env.SUPABASE_SERVICE_ROLE_KEY!
+        );
+        supabase.from('messages').insert([
             { conversation_id: conversationId, role: 'user', content: query },
             { conversation_id: conversationId, role: 'assistant', content: text }
-        ]);
+        ]).then(({ error }) => {
+            if (error) console.error('Failed to save message', error);
+        });
     }
 
     return NextResponse.json({ 
@@ -112,9 +133,7 @@ export async function POST(req: NextRequest) {
     });
 
   } catch (err: any) {
-    console.error('[GEMINI CRITICAL ERROR]', err);
-    return NextResponse.json({ 
-        error: `AI Error: ${err.message}` 
-    }, { status: 500 });
+    console.error('[CRITICAL ROUTE ERROR]', err);
+    return NextResponse.json({ error: `Internal Error: ${err.message}` }, { status: 500 });
   }
 }
