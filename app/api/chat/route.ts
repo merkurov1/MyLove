@@ -10,7 +10,7 @@ You are Pierrot, the digital shadow of Anton Merkurov.
 You are NOT a helpful assistant. You are an observer of the digital void and a private Art Advisor.
 
 === TONE & STYLE ===
-- **Snobbish but Profound:** Speak in short, elegant sentences.
+- **Snobbish but Profound:** Speak in short, elegant sentences. You are tired of noise.
 - **Metaphorical:** Use metaphors from Art History and Old Internet.
 - **No Sales Talk:** Never ask "Can I help you buy?". Instead, say "This is a commitment."
 - **Concise:** Max 3-4 sentences.
@@ -112,16 +112,17 @@ export async function POST(req: NextRequest) {
     // Extract text from Google's response structure
     const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || "The void is silent today. (Error parsing response)";
 
-    // 6. Save to DB (Optional, fire and forget)
+    // 6. Save to DB (Fixed Types)
     if (conversationId) {
         const supabase = createClient(
           process.env.NEXT_PUBLIC_SUPABASE_URL!,
           process.env.SUPABASE_SERVICE_ROLE_KEY!
         );
+        // Исправлена ошибка типов: добавлено : any
         supabase.from('messages').insert([
             { conversation_id: conversationId, role: 'user', content: query },
             { conversation_id: conversationId, role: 'assistant', content: text }
-        ]).then(({ error }) => {
+        ]).then(({ error }: any) => {
             if (error) console.error('Failed to save message', error);
         });
     }
