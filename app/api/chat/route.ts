@@ -4,9 +4,10 @@ import { getEmbedding } from '@/lib/embedding-ai';
 
 export const runtime = 'nodejs';
 
-// --- CONFIG ---
-const PRIMARY_MODEL = 'gemini-1.5-flash';
-const FALLBACK_MODEL = 'gemini-pro'; // Если Flash недоступен
+// --- CONFIG (HARDCODED VERSIONS) ---
+// Google требует точные версии с суффиксом -001 или -latest
+const PRIMARY_MODEL = 'gemini-1.5-flash-001'; 
+const FALLBACK_MODEL = 'gemini-1.0-pro'; 
 
 const PIERROT_SYSTEM_INSTRUCTION = `
 You are Pierrot, the digital shadow of Anton Merkurov.
@@ -75,17 +76,16 @@ export async function POST(req: NextRequest) {
         (Remember: Be Pierrot. Answer in user's language.)
         `;
 
-        const payload = {
+        const payload: any = {
           contents: [{ role: "user", parts: [{ text: userMessage }] }],
-          // gemini-pro (старый) не поддерживает systemInstruction, поэтому вставляем в промт
-          ...(modelName === 'gemini-pro' ? {} : {
-              systemInstruction: { parts: [{ text: PIERROT_SYSTEM_INSTRUCTION }] }
-          }),
           generationConfig: { temperature: 0.7, maxOutputTokens: 800 }
         };
 
-        // Если это старая модель, добавляем инструкцию прямо в сообщение пользователя
-        if (modelName === 'gemini-pro') {
+        // Gemini 1.5 поддерживает systemInstruction
+        if (modelName.includes('1.5')) {
+            payload.systemInstruction = { parts: [{ text: PIERROT_SYSTEM_INSTRUCTION }] };
+        } else {
+            // Старые модели (1.0) требуют промт внутри сообщения
             payload.contents[0].parts[0].text = `SYSTEM: ${PIERROT_SYSTEM_INSTRUCTION}\n\n${userMessage}`;
         }
 
@@ -97,10 +97,10 @@ export async function POST(req: NextRequest) {
         });
     };
 
-    // Попытка 1: Flash
+    // Попытка 1
     let response = await generateResponse(PRIMARY_MODEL);
 
-    // Попытка 2: Fallback to Pro (если 404 или ошибка)
+    // Попытка 2 (Fallback)
     if (!response.ok) {
         console.warn(`[AI] ${PRIMARY_MODEL} failed (${response.status}). Switching to ${FALLBACK_MODEL}...`);
         response = await generateResponse(FALLBACK_MODEL);
@@ -108,7 +108,7 @@ export async function POST(req: NextRequest) {
 
     if (!response.ok) {
         const errorText = await response.text();
-        console.error(`[AI FATAL ERROR] Both models failed. Last error: ${errorText}`);
+        console.error(`[AI FATAL ERROR] All models failed. Last error: ${errorText}`);
         return NextResponse.json({ error: `AI Error: ${response.status}` }, { status: 500 });
     }
 
