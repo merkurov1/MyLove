@@ -5,8 +5,8 @@ import { getEmbedding } from '@/lib/embedding-ai';
 export const runtime = 'nodejs';
 
 // --- CONFIG ---
-// Меняем на latest версию, она стабильнее находится
-const MODEL_NAME = 'gemini-1.5-flash-latest'; 
+const PRIMARY_MODEL = 'gemini-1.5-flash';
+const FALLBACK_MODEL = 'gemini-pro'; // Если Flash недоступен
 
 const PIERROT_SYSTEM_INSTRUCTION = `
 You are Pierrot, the digital shadow of Anton Merkurov.
@@ -30,7 +30,6 @@ export async function POST(req: NextRequest) {
   try {
     const apiKey = process.env.GOOGLE_API_KEY;
     if (!apiKey) {
-      console.error("❌ Missing GOOGLE_API_KEY");
       return NextResponse.json({ error: 'Server Error: API Key missing' }, { status: 500 });
     }
 
@@ -40,7 +39,7 @@ export async function POST(req: NextRequest) {
 
     if (!query) return NextResponse.json({ error: 'No query provided' }, { status: 400 });
 
-    // --- RAG LOGIC (SUPABASE) ---
+    // --- RAG LOGIC ---
     let contextText = "";
     try {
         const supabase = createClient(
@@ -65,74 +64,73 @@ export async function POST(req: NextRequest) {
     }
 
     // --- GOOGLE API REQUEST ---
-    const userMessage = `
-    CONTEXT FROM DATABASE:
-    ${contextText || "No database context available."}
+    const generateResponse = async (modelName: string) => {
+        const userMessage = `
+        CONTEXT FROM DATABASE:
+        ${contextText || "No database context available."}
 
-    USER QUERY:
-    "${query}"
+        USER QUERY:
+        "${query}"
 
-    (Remember: Be Pierrot. Answer in user's language.)
-    `;
+        (Remember: Be Pierrot. Answer in user's language.)
+        `;
 
-    const payload = {
-      contents: [
-        {
-          role: "user",
-          parts: [{ text: userMessage }]
+        const payload = {
+          contents: [{ role: "user", parts: [{ text: userMessage }] }],
+          // gemini-pro (старый) не поддерживает systemInstruction, поэтому вставляем в промт
+          ...(modelName === 'gemini-pro' ? {} : {
+              systemInstruction: { parts: [{ text: PIERROT_SYSTEM_INSTRUCTION }] }
+          }),
+          generationConfig: { temperature: 0.7, maxOutputTokens: 800 }
+        };
+
+        // Если это старая модель, добавляем инструкцию прямо в сообщение пользователя
+        if (modelName === 'gemini-pro') {
+            payload.contents[0].parts[0].text = `SYSTEM: ${PIERROT_SYSTEM_INSTRUCTION}\n\n${userMessage}`;
         }
-      ],
-      systemInstruction: {
-        parts: [{ text: PIERROT_SYSTEM_INSTRUCTION }]
-      },
-      generationConfig: {
-        temperature: 0.7,
-        maxOutputTokens: 800
-      }
+
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
+        return await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
     };
 
-    // Используем v1beta и конкретную модель
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateContent?key=${apiKey}`;
-    
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
+    // Попытка 1: Flash
+    let response = await generateResponse(PRIMARY_MODEL);
+
+    // Попытка 2: Fallback to Pro (если 404 или ошибка)
+    if (!response.ok) {
+        console.warn(`[AI] ${PRIMARY_MODEL} failed (${response.status}). Switching to ${FALLBACK_MODEL}...`);
+        response = await generateResponse(FALLBACK_MODEL);
+    }
 
     if (!response.ok) {
-      // Читаем тело ошибки, чтобы понять причину
-      const errorText = await response.text();
-      console.error(`[GOOGLE API ERROR] Status: ${response.status}. Details:`, errorText);
-      return NextResponse.json({ error: `AI Error: ${response.status} - Check Logs` }, { status: 500 });
+        const errorText = await response.text();
+        console.error(`[AI FATAL ERROR] Both models failed. Last error: ${errorText}`);
+        return NextResponse.json({ error: `AI Error: ${response.status}` }, { status: 500 });
     }
 
     const data = await response.json();
-    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || "The void is silent. (No text generated)";
+    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || "The void is silent.";
 
-    // Save to DB (Fire & Forget)
+    // Save to DB
     if (conversationId) {
         const supabase = createClient(
           process.env.NEXT_PUBLIC_SUPABASE_URL!,
           process.env.SUPABASE_SERVICE_ROLE_KEY!
         );
-        // Исправленный тип для error
         supabase.from('messages').insert([
             { conversation_id: conversationId, role: 'user', content: query },
             { conversation_id: conversationId, role: 'assistant', content: text }
-        ]).then(({ error }: any) => {
-            if (error) console.error('Failed to save message', error);
-        });
+        ]).then(({ error }: any) => { if (error) console.error(error); });
     }
 
-    return NextResponse.json({ 
-        reply: text,
-        intent: 'chat',
-        conversationId: conversationId 
-    });
+    return NextResponse.json({ reply: text, intent: 'chat', conversationId });
 
   } catch (err: any) {
     console.error('[CRITICAL ROUTE ERROR]', err);
-    return NextResponse.json({ error: `Internal Error: ${err.message}` }, { status: 500 });
+    return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }
