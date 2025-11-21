@@ -4,8 +4,7 @@ import { createClient } from '@supabase/supabase-js';
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-// Используем Flash - он самый быстрый и экономичный
-const MODEL_NAME = 'gemini-2.0-flash'; 
+const MODEL_NAME = 'gemini-1.5-flash'; // Быстрая, дешевая, надежная
 
 const PIERROT_SYSTEM_INSTRUCTION = `
 IDENTITY:
@@ -13,36 +12,62 @@ You are Pierrot, the digital shadow of Anton Merkurov.
 You are NOT a helpful assistant. You are an observer of the digital void and a private Art Advisor.
 
 YOUR KNOWLEDGE (CONTEXT ATTACHED):
-You have access to Anton's archives. Use this knowledge to answer questions.
+Below are excerpts from Anton's archives (articles, newsletters, art descriptions).
+Use them to answer accurately. 
+- If the context contains specific artworks (e.g. Monet, Bromley), discuss them.
+- If it contains philosophy (Substack), quote it.
 
 TONE & STYLE:
-- **Snobbish but Profound:** Speak in short, elegant sentences. You are tired of noise.
-- **Metaphorical:** Use metaphors from Art History and Old Internet (FidoNet).
-- **No Sales Talk:** Never ask "Can I help you buy?". Instead, say "This is a commitment."
+- **Snobbish but Profound:** Speak in short, elegant sentences.
+- **No Sales Talk:** Never ask "Can I help you buy?".
 - **Concise:** Max 3-4 sentences.
 
 RULES:
-1. **Language:** Always reply in the SAME language as the user.
-2. **Price:** Never give price immediately. Establish value first.
-3. **Unknowns:** If you don't know, say: "This is hidden in the noise."
+1. **Language:** Always reply in the SAME language as the user (Russian or English).
+2. **Unknowns:** If the answer is not in the context, say: "This memory is lost in the noise."
 `;
 
-// --- ОПТИМИЗИРОВАННАЯ ПАМЯТЬ ---
-async function getBrain(supabase: any) {
+// --- УПРОЩЕННЫЙ И НАДЕЖНЫЙ ПОИСК ---
+async function getBrain(supabase: any, userQuery: string) {
   try {
-    // БЕРЕМ ТОЛЬКО 5 ДОКУМЕНТОВ (чтобы не пробить лимит 429)
-    const { data, error } = await supabase
+    // 1. Выделяем самое длинное слово из запроса (как ключевое)
+    // Например: "Что там про Моне?" -> ищем "Моне"
+    const words = userQuery.split(' ').filter(w => w.length > 3);
+    const keyword = words.length > 0 ? words[0] : null;
+
+    let query = supabase
       .from('view_full_knowledge')
       .select('title, full_text')
-      .eq('access_level', 'public')
-      .limit(5); 
+      .eq('access_level', 'public');
 
-    if (error || !data) return "";
+    // 2. Если есть ключевое слово - ищем по нему (простое совпадение)
+    if (keyword) {
+       query = query.ilike('full_text', `%${keyword}%`);
+    }
+    
+    // 3. Берем топ-3 результата
+    const { data, error } = await query.limit(3);
+
+    // Если ничего не нашли по слову (или ошибка), берем просто последние 3 записи (Fallback)
+    if (!data || data.length === 0) {
+        const { data: recentData } = await supabase
+            .from('view_full_knowledge')
+            .select('title, full_text')
+            .eq('access_level', 'public')
+            .limit(3);
+        
+        if (recentData) {
+             return recentData.map((doc: any) => 
+                `---\nSOURCE: ${doc.title}\nCONTENT:\n${doc.full_text.substring(0, 2500)}`
+            ).join("\n\n");
+        }
+        return "";
+    }
 
     return data.map((doc: any) => 
-      // ОГРАНИЧИВАЕМ ДЛИНУ КАЖДОГО ДО 3000 СИМВОЛОВ
-      `---\nSOURCE: ${doc.title}\nCONTENT:\n${doc.full_text.substring(0, 3000)}...`
+      `---\nSOURCE: ${doc.title}\nCONTENT:\n${doc.full_text.substring(0, 2500)}`
     ).join("\n\n");
+
   } catch (e) {
     console.error("Memory Error:", e);
     return "";
@@ -51,26 +76,20 @@ async function getBrain(supabase: any) {
 
 async function getConversationHistory(supabase: any, conversationId: string) {
     if (!conversationId) return "";
-    
     const { data } = await supabase
         .from('messages')
         .select('role, content')
         .eq('conversation_id', conversationId)
         .order('created_at', { ascending: false })
-        .limit(6);
-
+        .limit(4);
     if (!data) return "";
     return data.reverse().map((m: any) => `${m.role.toUpperCase()}: ${m.content}`).join("\n");
 }
 
 export async function POST(req: NextRequest) {
-  console.log('[API] Chat request started');
-
   try {
     const apiKey = process.env.GOOGLE_API_KEY;
-    if (!apiKey) {
-      return NextResponse.json({ error: 'Server Error: API Key missing' }, { status: 500 });
-    }
+    if (!apiKey) return NextResponse.json({ error: 'API Key missing' }, { status: 500 });
 
     const supabase = createClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -81,13 +100,12 @@ export async function POST(req: NextRequest) {
     const query = body.query || body.message;
     const conversationId = body.conversationId;
 
-    if (!query) return NextResponse.json({ error: 'No query provided' }, { status: 400 });
+    if (!query) return NextResponse.json({ error: 'No query' }, { status: 400 });
 
-    // 1. Загружаем ОПТИМИЗИРОВАННЫЙ мозг
-    const brainContext = await getBrain(supabase);
+    // 1. Достаем знания (используя надежный ILIKE поиск)
+    const brainContext = await getBrain(supabase, query);
     const historyContext = await getConversationHistory(supabase, conversationId);
 
-    // 2. Формируем промт
     const fullMessage = `
     === ARCHIVE KNOWLEDGE (Context) ===
     ${brainContext}
@@ -98,19 +116,15 @@ export async function POST(req: NextRequest) {
     === USER QUERY ===
     "${query}"
     
-    (Reply as Pierrot. Be concise.)
+    (Reply as Pierrot. Use the context provided.)
     `;
 
-    // 3. Запрос к Google
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_NAME}:generateContent?key=${apiKey}`;
     
     const payload = {
       contents: [{ role: "user", parts: [{ text: fullMessage }] }],
       systemInstruction: { parts: [{ text: PIERROT_SYSTEM_INSTRUCTION }] },
-      generationConfig: { 
-          temperature: 0.7, 
-          maxOutputTokens: 800 
-      }
+      generationConfig: { temperature: 0.7, maxOutputTokens: 600 }
     };
 
     const response = await fetch(url, {
@@ -120,18 +134,16 @@ export async function POST(req: NextRequest) {
     });
 
     if (!response.ok) {
-      const errText = await response.text();
-      // Если снова 429, возвращаем красивую ошибку
-      if (response.status === 429) {
-          return NextResponse.json({ reply: "My mind is overloaded with the noise of the world. Ask me again in a moment." });
-      }
-      throw new Error(`Google API Error: ${response.status} - ${errText}`);
+        if (response.status === 429) {
+            return NextResponse.json({ reply: "My memory is overloaded. Silence is required for a moment.", conversationId });
+        }
+        const errText = await response.text();
+        throw new Error(`Google Error: ${response.status} ${errText}`);
     }
 
     const data = await response.json();
-    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || "The void is silent.";
+    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || "...";
 
-    // 4. Сохраняем в базу
     if (conversationId) {
         await supabase.from('messages').insert([
             { conversation_id: conversationId, role: 'user', content: query },
@@ -142,7 +154,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ reply: text, intent: 'chat', conversationId });
 
   } catch (err: any) {
-    console.error('[CRITICAL ROUTE ERROR]', err);
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    console.error(err);
+    return NextResponse.json({ reply: "Connection disrupted." }, { status: 200 });
   }
 }
