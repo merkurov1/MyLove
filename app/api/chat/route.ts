@@ -4,10 +4,10 @@ import { getEmbedding } from '@/lib/embedding-ai';
 
 export const runtime = 'nodejs';
 
-// --- CONFIG (HARDCODED VERSIONS) ---
-// Google требует точные версии с суффиксом -001 или -latest
-const PRIMARY_MODEL = 'gemini-1.5-flash-001'; 
-const FALLBACK_MODEL = 'gemini-1.0-pro'; 
+// --- CONFIG ---
+// Используем самые короткие алиасы. Они перенаправляют на стабильные версии.
+const PRIMARY_MODEL = 'gemini-1.5-flash';
+const FALLBACK_MODEL = 'gemini-pro'; 
 
 const PIERROT_SYSTEM_INSTRUCTION = `
 You are Pierrot, the digital shadow of Anton Merkurov.
@@ -76,20 +76,25 @@ export async function POST(req: NextRequest) {
         (Remember: Be Pierrot. Answer in user's language.)
         `;
 
+        // Базовая структура
         const payload: any = {
           contents: [{ role: "user", parts: [{ text: userMessage }] }],
           generationConfig: { temperature: 0.7, maxOutputTokens: 800 }
         };
 
-        // Gemini 1.5 поддерживает systemInstruction
+        // АДАПТАЦИЯ ПОД МОДЕЛЬ:
+        // Gemini 1.5 (Flash/Pro) умеет systemInstruction
         if (modelName.includes('1.5')) {
             payload.systemInstruction = { parts: [{ text: PIERROT_SYSTEM_INSTRUCTION }] };
         } else {
-            // Старые модели (1.0) требуют промт внутри сообщения
-            payload.contents[0].parts[0].text = `SYSTEM: ${PIERROT_SYSTEM_INSTRUCTION}\n\n${userMessage}`;
+            // Gemini Pro (Legacy) НЕ умеет systemInstruction, вклеиваем в юзера
+            // И заменяем userMessage на комбинированный
+            const legacyPrompt = `SYSTEM INSTRUCTION:\n${PIERROT_SYSTEM_INSTRUCTION}\n\nUSER MESSAGE:\n${userMessage}`;
+            payload.contents[0].parts[0].text = legacyPrompt;
         }
 
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
+        
         return await fetch(url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -97,10 +102,10 @@ export async function POST(req: NextRequest) {
         });
     };
 
-    // Попытка 1
+    // Попытка 1: Flash
     let response = await generateResponse(PRIMARY_MODEL);
 
-    // Попытка 2 (Fallback)
+    // Попытка 2: Fallback to Pro (старая, но надежная)
     if (!response.ok) {
         console.warn(`[AI] ${PRIMARY_MODEL} failed (${response.status}). Switching to ${FALLBACK_MODEL}...`);
         response = await generateResponse(FALLBACK_MODEL);
