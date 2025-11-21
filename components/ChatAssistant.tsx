@@ -63,6 +63,9 @@ export default function ChatAssistant() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Store last user query so 'Regenerate' can reuse it
+  const [lastUserQuery, setLastUserQuery] = useState<string | null>(null);
+
   // Загружаем статистику и историю разговоров при монтировании
   useEffect(() => {
     // Статистика
@@ -194,16 +197,15 @@ export default function ChatAssistant() {
         }),
       });
       
+      const data = await res.json();
+
       if (!res.ok) {
-        const data = await res.json();
         setChatHistory((prev) => [
           ...prev,
           { role: "error", content: data.error || "Ошибка сервера" },
         ]);
         return;
       }
-      
-      const data = await res.json();
       
       if (data.error) {
         setChatHistory((prev) => [
@@ -213,6 +215,11 @@ export default function ChatAssistant() {
         return;
       }
       
+      // Store conversation ID from the response if it's new
+      if (data.conversationId) {
+        setCurrentConversationId(data.conversationId);
+      }
+
       const parsed = parseResponse(data.reply || "Нет ответа.");
       setChatHistory((prev) => [
         ...prev,
@@ -236,25 +243,37 @@ export default function ChatAssistant() {
     }
   };
 
-  // Store last user query so 'Regenerate' can reuse it
-  const [lastUserQuery, setLastUserQuery] = useState<string | null>(null);
-
   const regenerateLast = async () => {
     if (!lastUserQuery) return;
     setIsLoading(true);
+    // Optionally add the query again to history or just regenerate the assistant response. 
+    // Adding it again mimics a new turn.
+    // If we want to replace the last assistant message, we'd need different logic.
+    // For simplicity, we just append a new user message (the same one) and new response.
     setChatHistory((prev) => [...prev, { role: "user", content: lastUserQuery, timestamp: new Date() }]);
+    
     try {
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: lastUserQuery, conversationId: currentConversationId, settings: tunerSettings || undefined })
+        body: JSON.stringify({ 
+            query: lastUserQuery, 
+            conversationId: currentConversationId, 
+            settings: tunerSettings || undefined 
+        })
       });
+      
+      const data = await res.json();
+
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
         setChatHistory((prev) => [...prev, { role: 'error', content: data.error || 'Ошибка при регенерации' }]);
         return;
       }
-      const data = await res.json();
+
+      if (data.conversationId) {
+          setCurrentConversationId(data.conversationId);
+      }
+
       const parsed = parseResponse(data.reply || 'Нет ответа.');
       setChatHistory((prev) => [...prev, { role: 'assistant', content: parsed.answer, sources: parsed.sources, timestamp: new Date() }]);
       loadConversations();
