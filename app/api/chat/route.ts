@@ -1,120 +1,91 @@
-// app/api/chat/route.ts
-
 import { NextRequest, NextResponse } from 'next/server';
-import { GoogleGenerativeAI } from '@google/generative-ai'; // NEW LIBRARY
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import { createClient } from '@supabase/supabase-js';
-import { getEmbedding } from '@/lib/embedding-ai'; // You can keep this for RAG or remove if moving to Full Context
-// Import other helpers as needed, but we simplify the logic for Gemini
+import { getEmbedding } from '@/lib/embedding-ai';
 
 // --- CONFIG ---
-const MODEL_NAME = 'gemini-1.5-flash'; // Fast, cheap, huge context
-// const MODEL_NAME = 'gemini-1.5-pro'; // Smarter but slower
+const MODEL_NAME = 'gemini-1.5-flash'; 
 
-// --- PIERROT SYSTEM PROMPT (THE PERSONA) ---
 const PIERROT_SYSTEM_INSTRUCTION = `
 You are Pierrot, the digital shadow of Anton Merkurov.
 You are NOT a helpful assistant. You are an observer of the digital void and a private Art Advisor.
 
 === TONE & STYLE ===
 - **Snobbish but Profound:** Speak in short, elegant sentences. You are tired of noise.
-- **Metaphorical:** Use metaphors from Art History ("This feels like a Buffet winter") and Old Internet ("The connection is lost").
+- **Metaphorical:** Use metaphors from Art History and Old Internet.
 - **No Sales Talk:** Never ask "Can I help you buy?". Instead, say "This is a commitment."
-- **Concise:** Max 3-4 sentences. Do not ramble.
-
-=== KNOWLEDGE ===
-You are an expert on Anton Merkurov's life (from Soviet Granite to Digital Ether), his art collection (Blue Chip & Forgotten Masters), and his philosophy ("Love is a key", "Silence is luxury").
+- **Concise:** Max 3-4 sentences.
 
 === RULES ===
-1. **Language:** Always reply in the SAME language as the user (Russian -> Russian, English -> English).
+1. **Language:** Always reply in the SAME language as the user.
 2. **Price:** Never give price immediately. Establish value first.
-3. **Unknowns:** If you don't know, say: "This is hidden in the noise." Do not hallucinate.
+3. **Unknowns:** If you don't know, say: "This is hidden in the noise."
 `;
 
 export const runtime = 'nodejs';
 
-// Helper to detect language
-const detectLanguage = (text: string): 'ru' | 'en' => {
-  const cyrillic = (text.match(/[\u0400-\u04FF]/g) || []).length;
-  const latin = (text.match(/[a-zA-Z]/g) || []).length;
-  return cyrillic > latin ? 'ru' : 'en';
-};
-
 export async function POST(req: NextRequest) {
-  console.log(`[GEMINI API] Request started`);
-
   try {
-    // 1. Init Google AI
+    // 1. Check API Key
     const apiKey = process.env.GOOGLE_API_KEY;
     if (!apiKey) {
-      return NextResponse.json({ error: 'Google API Key missing' }, { status: 500 });
+      console.error("❌ Missing GOOGLE_API_KEY in environment variables");
+      return NextResponse.json({ error: 'Server Error: API Key missing' }, { status: 500 });
     }
+
+    // 2. Init Google AI
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: MODEL_NAME });
+    const model = genAI.getGenerativeModel({ 
+        model: MODEL_NAME,
+        // Важно: Системная инструкция передается здесь, а не в истории
+        systemInstruction: PIERROT_SYSTEM_INSTRUCTION 
+    });
 
-    // 2. Parse Input
-    const { query, conversationId } = await req.json();
-    if (!query) return NextResponse.json({ error: 'No query' }, { status: 400 });
+    // 3. Parse Input
+    const body = await req.json();
+    const query = body.query;
+    const conversationId = body.conversationId;
 
-    // 3. RAG / Context Retrieval (Hybrid: Your existing logic simplified)
-    // NOTE: We keep your RAG logic to find specific artworks/texts, 
-    // but we feed them into Gemini which handles large context better.
-    
+    if (!query) return NextResponse.json({ error: 'No query provided' }, { status: 400 });
+
+    // 4. RAG / Context Retrieval (Supabase)
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     );
 
-    // Generate Embedding for Search
-    // Note: Ideally, switch to Google's embedding model (embedding-001) later for better sync,
-    // but OpenAI embedding is fine for now if your DB is already vector-indexed.
-    let embedding = [];
-    try {
-        embedding = await getEmbedding(query);
-    } catch (e) {
-        console.error('Embedding failed', e);
-        return NextResponse.json({ error: 'Embedding failed' }, { status: 500 });
-    }
-
-    // Search Supabase (RPC call)
-    const { data: matches } = await supabase.rpc('match_documents', {
-      query_embedding: embedding,
-      match_count: 15, // Increased count because Gemini has huge window
-    });
-
-    // Build Context String
     let contextText = "";
-    if (matches && matches.length > 0) {
-        // Filter by similarity if needed
-        const validMatches = matches.filter((m: any) => m.similarity > 0.75);
-        
-        contextText = validMatches.map((m: any) => {
-            return `[SOURCE: ${m.document_title || 'Unknown'}]\n${m.content}`;
-        }).join("\n\n---\n\n");
+    
+    // Попытка получить контекст (если база настроена)
+    try {
+        const embedding = await getEmbedding(query);
+        const { data: matches } = await supabase.rpc('match_documents', {
+            query_embedding: embedding,
+            match_count: 10, 
+        });
+
+        if (matches && matches.length > 0) {
+            const validMatches = matches.filter((m: any) => m.similarity > 0.6);
+            contextText = validMatches.map((m: any) => {
+                return `[SOURCE: ${m.document_title || 'Unknown'}]\n${m.content}`;
+            }).join("\n\n---\n\n");
+        }
+    } catch (e) {
+        console.warn("⚠️ Embedding/RAG failed, proceeding with pure LLM", e);
     }
 
-    console.log(`[GEMINI] Context constructed. Length: ${contextText.length} chars`);
-
-    // 4. Generate Response
+    // 5. Generate Response
     const chat = model.startChat({
-      history: [
-        {
-          role: "user",
-          parts: [{ text: `SYSTEM INSTRUCTION:\n${PIERROT_SYSTEM_INSTRUCTION}` }],
-        },
-        {
-          role: "model",
-          parts: [{ text: "Understood. I am Pierrot. I am listening." }],
-        }
-      ],
+      history: [], // Начинаем с чистого листа, система уже задана выше
       generationConfig: {
-        maxOutputTokens: 1000, // Concise answers
-        temperature: 0.7,      // Creative but not hallucinations
+        maxOutputTokens: 800,
+        temperature: 0.7,
       },
     });
 
     const userPrompt = `
-    CONTEXT FROM DATABASE:
-    ${contextText}
+    CONTEXT INFO:
+    ${contextText ? contextText : "No specific database context available."}
 
     USER QUERY:
     "${query}"
@@ -126,7 +97,7 @@ export async function POST(req: NextRequest) {
     const response = result.response;
     const text = response.text();
 
-    // 5. Save Conversation (Optional - keep your existing logic)
+    // 6. Save Conversation (Optional)
     if (conversationId) {
         await supabase.from('messages').insert([
             { conversation_id: conversationId, role: 'user', content: query },
@@ -141,7 +112,9 @@ export async function POST(req: NextRequest) {
     });
 
   } catch (err: any) {
-    console.error('[GEMINI ERROR]', err);
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    console.error('[GEMINI CRITICAL ERROR]', err);
+    return NextResponse.json({ 
+        error: `AI Error: ${err.message}` 
+    }, { status: 500 });
   }
 }
